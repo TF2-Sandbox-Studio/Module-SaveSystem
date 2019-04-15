@@ -1431,7 +1431,7 @@ bool LoadProps(int loader, char[] szLoadString)
 			}
 			
 			//door
-			if (StrEqual(szModel, "models/props_lab/blastdoor001c.mdl"))
+			if (StrEqual(szModel, "models/props_lab/blastdoor001c.mdl") && !StrContains(szName, "door") && StrContains(szName, "Blastdoor"))
 			{
 				if (strlen(szBuffer[17]) == 0)
 				{
