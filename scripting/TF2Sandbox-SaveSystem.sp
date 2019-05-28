@@ -1395,7 +1395,7 @@ bool LoadProps(int loader, char[] szLoadString)
 				int Obj_LightDynamic = CreateEntityByName("light_dynamic");
 				
 				char szColor[32];
-				Format(szColor, sizeof(szColor), "255 255 255");
+				Format(szColor, sizeof(szColor), "%i %i %i", iRed, iGreen, iBlue);
 				
 				SetVariantString("500");
 				AcceptEntityInput(Obj_LightDynamic, "distance", -1);
