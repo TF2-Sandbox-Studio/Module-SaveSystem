@@ -8,6 +8,7 @@
 //  4.Set Permission...
 //  5.Load others project...
 //	6.Check Cache System...
+//	7.Connect to Cloud Storage
 //		  		      
 ////////////////////////
 
@@ -16,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.1"
+#define PLUGIN_VERSION "9.2"
 
 #include <sourcemod>
 #include <sdktools>
@@ -53,7 +54,6 @@ bool g_bPermission[MAXPLAYERS + 1][51]; //client, slot
 //Cache system
 bool g_bIsClientInServer[MAXPLAYERS + 1] = false;
 bool g_bWaitingForPlayers;
-//------------
 
 int g_iCoolDown[MAXPLAYERS + 1] = 0;
 int g_iSelectedClient[MAXPLAYERS + 1];
@@ -64,7 +64,6 @@ Database g_DB;
 
 int g_iCloudRow[MAXPLAYERS + 1];
 bool g_SqlRunning = false;
-//------------
 
 /*******************************************************************************************
 	Start
@@ -134,8 +133,7 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 			bool tn_is_ml;
 			int targets_found = ProcessTargetString(cTarget, client, targets, sizeof(targets), COMMAND_FILTER_NO_IMMUNITY | COMMAND_FILTER_NO_MULTI, target_name, sizeof(target_name), tn_is_ml);
 			
-			if (targets_found <= COMMAND_TARGET_AMBIGUOUS)
-				Build_PrintToChat(client, "Error: More then one client have the name : \x04%s\x01", cTarget);
+			if (targets_found <= COMMAND_TARGET_AMBIGUOUS) Build_PrintToChat(client, "Error: More then one client have the name : \x04%s\x01", cTarget);
 			else if (targets_found <= COMMAND_TARGET_NONE)
 			{
 				Build_PrintToChat(client, "Searching steamid(\x04%s\x01)... Searching file slot\x04%i\x01...", cTarget, StringToInt(cSlot));
@@ -143,32 +141,32 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 				char cFileName[255];
 				BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBSaveSystem/%s&%s@%i.tf2sb", g_cCurrentMap, cTarget, StringToInt(cSlot));
 				
-				if (FileExists(cFileName))
-					LoadDataSteamID(client, cTarget, StringToInt(cSlot));
-				else
-					Build_PrintToChat(client, "Error: Fail to find the Data File...");
+				if (FileExists(cFileName)) LoadDataSteamID(client, cTarget, StringToInt(cSlot));
+				else Build_PrintToChat(client, "Error: Fail to find the Data File...");
 			}
 			else
 			{
 				Build_PrintToChat(client, "Found target(\x04%N\x01)... Searching file slot\x04%i\x01...", targets[0], StringToInt(cSlot));
-				if (DataFileExist(targets[0], StringToInt(cSlot)))
-					LoadData(client, targets[0], StringToInt(cSlot));
-				else
-					Build_PrintToChat(client, "Error: Fail to find the Data File...");
+				if (DataFileExist(targets[0], StringToInt(cSlot))) LoadData(client, targets[0], StringToInt(cSlot));
+				else Build_PrintToChat(client, "Error: Fail to find the Data File...");
 			}
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else
-			Build_PrintToChat(client, "Usage: sm_ssload <\x04targetname\x01|\x04steamid\x01> <\x04slot\x01>");
+		else Build_PrintToChat(client, "Usage: sm_ssload <\x04targetname\x01|\x04steamid\x01> <\x04slot\x01>");
 	}
 	return;
 }
 
 public void OnMapStart()
 {
-	for (int i = 1; i < MAXPLAYERS; i++)
-		OnClientPutInServer(i);
+	for (int client = 1; client <= MaxClients; client++)
+	{
+		if(IsClientInGame(client))
+		{
+			OnClientPutInServer(client);
+		}
+	}
 	
 	CreateTimer(GetConVarFloat(cviAdvertisement), Timer_Ads, 0, TIMER_FLAG_NO_MAPCHANGE);
 	CreateTimer(3.0, Timer_LoadMap, 0, TIMER_FLAG_NO_MAPCHANGE);
@@ -192,27 +190,20 @@ public void OnClientPutInServer(int client)
 	g_bIsClientInServer[client] = true;
 	if(g_bWaitingForPlayers)	CreateTimer(30.0, Timer_Load, client);
 	else CreateTimer(5.0, Timer_Load, client);
-	//------------
-	
-	
 }
 
 public void OnClientDisconnect(int client)
 {
-	//Cache system
 	g_bIsClientInServer[client] = false;
-	//------------
 }
 
 public void TF2_OnWaitingForPlayersStart()
 {
-	//Cache system
 	g_bWaitingForPlayers = true;
 }
 
 public void TF2_OnWaitingForPlayersEnd()
 {
-	//Cache system
 	g_bWaitingForPlayers = false;
 }
 
@@ -223,24 +214,24 @@ public Action Timer_CoolDownFunction(Handle timer, int client)
 {
 	g_iCoolDown[client] -= 1;
 	
-	if (g_iCoolDown[client] >= 1)	CreateTimer(1.0, Timer_CoolDownFunction, client);
-	else	g_iCoolDown[client] = 0;
+	if (g_iCoolDown[client] >= 1) CreateTimer(1.0, Timer_CoolDownFunction, client);
+	else g_iCoolDown[client] = 0;
 }
 
 public Action Timer_Ads(Handle timer, int LoopNumber)
 {
 	switch (LoopNumber)
 	{
-		case (0):Build_PrintToAll(" Type \x04/ss\x01 to SAVE or LOAD your buildings!");
-		case (1):Build_PrintToAll(" Remember to SAVE your buildings! Type \x04/ss\x01 in chat box to save.");
-		case (2):Build_PrintToAll(" Cache System will help you to cache your props automatically.");
-		case (3):Build_PrintToAll(" If you disconnect for some reasons.. Nevermind! Cache System will cache your props!");
-		case (4):CPrintToChatAll("[{green}Save System{default}] {orange}Developer{default}: {yellow}BattlefieldDuck{default}, {green}aIM{default}, {pink}Leadkiller{default}, {red}Danct12{default}.");
+		case (0): Build_PrintToAll(" Type \x04/ss\x01 to SAVE or LOAD your buildings!");
+		case (1): Build_PrintToAll(" Remember to SAVE your buildings! Type \x04/ss\x01 in chat box to save.");
+		case (2): Build_PrintToAll(" Cache System will help you to cache your props automatically.");
+		case (3): Build_PrintToAll(" If you disconnect for some reasons.. Nevermind! Cache System will cache your props!");
+		case (4): CPrintToChatAll("[{green}Save System{default}] {orange}Developer{default}: {yellow}BattlefieldDuck{default}, {green}aIM{default}, {pink}Leadkiller{default}, {red}Danct12{default}.");
 	}
+	
 	LoopNumber++;
 	
-	if (LoopNumber > 4)
-		LoopNumber = 0;
+	if (LoopNumber > 4) LoopNumber = 0;
 	
 	CreateTimer(GetConVarFloat(cviAdvertisement), Timer_Ads, LoopNumber, TIMER_FLAG_NO_MAPCHANGE);
 }
@@ -250,33 +241,26 @@ public Action Timer_LoadMap(Handle timer, int client)
 	char Mapname[64];
 	GetConVarString(cvMapname, Mapname, sizeof(Mapname));
 	
-	if (strlen(Mapname) == 0)
-		GetCurrentMap(g_cCurrentMap, sizeof(g_cCurrentMap));
-	else
-		strcopy(g_cCurrentMap, sizeof(Mapname), Mapname);
+	if (strlen(Mapname) == 0) GetCurrentMap(g_cCurrentMap, sizeof(g_cCurrentMap));
+	else strcopy(g_cCurrentMap, sizeof(Mapname), Mapname);
 }
 
 //Cache system
 public Action Timer_Save(Handle timer, int client)
 {
-	if (IsValidClient(client) && !IsFakeClient(client))
-		SaveData(client, 0);
+	if (IsValidClient(client) && !IsFakeClient(client)) SaveData(client, 0);
 	
-	if (g_bIsClientInServer[client])
-		CreateTimer(10.0, Timer_Save, client);
+	if (g_bIsClientInServer[client]) CreateTimer(10.0, Timer_Save, client);
 }
 
 public Action Timer_Load(Handle timer, int client)
 {
 	if (IsValidClient(client) && !IsFakeClient(client) && !g_bWaitingForPlayers)
 	{
-		if (DataFileExist(client, 0))
-			Command_CacheMenu(client, -1);
-		else
-			CreateTimer(5.0, Timer_Save, client);
+		if (DataFileExist(client, 0)) Command_CacheMenu(client, -1);
+		else CreateTimer(5.0, Timer_Save, client);
 	}
-	else
-		CreateTimer(5.0, Timer_Load, client);
+	else CreateTimer(5.0, Timer_Load, client);
 }
 //------------
 
@@ -290,20 +274,19 @@ public Action Command_CacheMenu(int client, int args)
 		char menuinfo[1024];
 		Menu menu = new Menu(Handler_CacheMenu);
 		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache Menu v%s (In Development)\n \nThe server had saved your props when you disconnected.\nWould you like to load the Cache?\n ", PLUGIN_VERSION);
+		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache Menu v%s\n \nThe server had saved your props when you disconnected.\nWould you like to load the Cache?\n ", PLUGIN_VERSION);
 		menu.SetTitle(menuinfo);
 		
 		int iSlot = 0;
-		char cDate[11];
-		char cSlot[6];
+		char cDate[11], cSlot[6];
 		IntToString(iSlot, cSlot, sizeof(cSlot));
+		
 		if (DataFileExist(client, iSlot))
 		{
 			GetDataDate(client, iSlot, cDate, sizeof(cDate));
 			Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
 		}
-		else
-			Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
+		else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
 		
 		menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 		
@@ -327,19 +310,17 @@ public int Handler_CacheMenu(Menu menu, MenuAction action, int client, int selec
 		char info[32];
 		menu.GetItem(selection, info, sizeof(info));
 		
-		if (StrEqual(info, "LOAD"))
-			LoadData(client, client, 0); //Load Cache
+		if (StrEqual(info, "LOAD")) LoadData(client, client, 0); //Load Cache
 		else if (StrEqual(info, "DELETE"))
 		{
 			char cFileName[255];
 			GetBuildPath(client, 0, cFileName);
 			
-			if (FileExists(cFileName))
-				DeleteFile(cFileName); //Delete
+			if (FileExists(cFileName)) DeleteFile(cFileName); //Delete
 		}
+		
 		CreateTimer(5.0, Timer_Save, client);
 	}
-	/*
 	else if (action == MenuAction_Cancel)
 	{
 		if (selection == MenuCancel_ExitBack)
@@ -347,11 +328,10 @@ public int Handler_CacheMenu(Menu menu, MenuAction action, int client, int selec
 			
 		}
 	}
-	*/
 	else if (action == MenuAction_End)
 		delete menu;
 }
-//--------------------------------------------------
+
 
 /*******************************************************************************************
 	1. Main Menu
@@ -384,15 +364,13 @@ public Action Command_MainMenu(int client, int args)
 		menu.AddItem("PERMISSION", menuinfo);
 		
 		Format(menuinfo, sizeof(menuinfo), " Load other's projects... ", client);
-		if (GetClientInGame() > 1)
-			menu.AddItem("LOADOTHERS", menuinfo);
-		else
-			menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
+		if (GetClientInGame() > 1) menu.AddItem("LOADOTHERS", menuinfo);
+		else menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
 		
 		Format(menuinfo, sizeof(menuinfo), " Check Cache System... ", client);
 		menu.AddItem("CACHE", menuinfo);
 		
-		Format(menuinfo, sizeof(menuinfo), " Connect to Cloud Storage(Test)... ", client);
+		Format(menuinfo, sizeof(menuinfo), " Connect to Cloud Storage... ", client);
 		menu.AddItem("CLOUD", menuinfo);
 		
 		menu.ExitBackButton = false;
@@ -409,18 +387,12 @@ public int Handler_MainMenu(Menu menu, MenuAction action, int client, int select
 		char info[32];
 		menu.GetItem(selection, info, sizeof(info));
 		
-		if (StrEqual(info, "LOAD"))
-			Command_LoadMenu(client, -1);
-		else if (StrEqual(info, "SAVE"))
-			Command_SaveMenu(client, -1);
-		else if (StrEqual(info, "DELETE"))
-			Command_DeleteMenu(client, -1);
-		else if (StrEqual(info, "PERMISSION"))
-			Command_PermissionMenu(client, -1);
-		else if (StrEqual(info, "LOADOTHERS"))
-			Command_LoadOthersMenu(client, -1);
-		else if (StrEqual(info, "CACHE"))
-			Command_CheckCacheMenu(client, -1);
+		if (StrEqual(info, "LOAD")) Command_LoadMenu(client, -1);
+		else if (StrEqual(info, "SAVE")) Command_SaveMenu(client, -1);
+		else if (StrEqual(info, "DELETE")) Command_DeleteMenu(client, -1);
+		else if (StrEqual(info, "PERMISSION")) Command_PermissionMenu(client, -1);
+		else if (StrEqual(info, "LOADOTHERS")) Command_LoadOthersMenu(client, -1);
+		else if (StrEqual(info, "CACHE")) Command_CheckCacheMenu(client, -1);
 		else if (StrEqual(info, "CLOUD"))
 		{
 			Handle dp;
@@ -434,8 +406,7 @@ public int Handler_MainMenu(Menu menu, MenuAction action, int client, int select
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			FakeClientCommand(client, "sm_build");
+		if (selection == MenuCancel_ExitBack) FakeClientCommand(client, "sm_build");
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -454,8 +425,7 @@ public Action Command_LoadMenu(int client, int args)
 		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to LOAD....", PLUGIN_VERSION, g_cCurrentMap);
 		menu.SetTitle(menuinfo);
 		
-		char cSlot[6];
-		char cDate[11];
+		char cSlot[6], cDate[11];
 		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 		{
 			IntToString(iSlot, cSlot, sizeof(cSlot));
@@ -494,15 +464,13 @@ public int Handler_LoadMenu(Menu menu, MenuAction action, int client, int select
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else
-			Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_LoadMenu(client, -1);
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -561,15 +529,13 @@ public int Handler_SaveMenu(Menu menu, MenuAction action, int client, int select
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else
-			Build_PrintToChat(client, "Save Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Save Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_SaveMenu(client, -1);
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -588,8 +554,7 @@ public Action Command_DeleteMenu(int client, int args)
 		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to DELETE....", PLUGIN_VERSION, g_cCurrentMap);
 		menu.SetTitle(menuinfo);
 		
-		char cSlot[6];
-		char cDate[11];
+		char cSlot[6], cDate[11];
 		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 		{
 			IntToString(iSlot, cSlot, sizeof(cSlot));
@@ -626,8 +591,7 @@ public int Handler_DeleteMenu(Menu menu, MenuAction action, int client, int sele
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -668,15 +632,13 @@ public int Handler_DeleteConfirmMenu(Menu menu, MenuAction action, int client, i
 		char info[32];
 		menu.GetItem(selection, info, sizeof(info));
 		
-		if (!StrEqual(info, "NO"))
-			DeleteData(client, StringToInt(info));
+		if (!StrEqual(info, "NO")) DeleteData(client, StringToInt(info));
 		
 		Command_DeleteMenu(client, -1);
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_DeleteMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_DeleteMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -696,21 +658,22 @@ public Action Command_PermissionMenu(int client, int args)
 		menu.SetTitle(menuinfo);
 		
 		char cSlot[6];
-		char cDate[11];
+		//char cDate[11];
 		char cPermission[8] = "Private";
 		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 		{
 			IntToString(iSlot, cSlot, sizeof(cSlot));
 			if (DataFileExist(client, iSlot))
 			{
-				GetDataDate(client, iSlot, cDate, sizeof(cDate));
+				//GetDataDate(client, iSlot, cDate, sizeof(cDate));
 				
 				if (g_bPermission[client][iSlot])
 					cPermission = "Public";
 				else
 					cPermission = "Private";
 				
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(client, iSlot), cPermission);
+				//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(client, iSlot), cPermission);
+				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
 				menu.AddItem(cSlot, menuinfo);
 			}
 			else
@@ -748,18 +711,17 @@ public int Handler_PermissionMenu(Menu menu, MenuAction action, int client, int 
 				g_bPermission[client][iSlot] = true;
 				Build_PrintToChat(client, "Slot\x04%i\x01 Permission have set to \x04Public\x01.", iSlot);
 			}
+			
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else
-			Build_PrintToChat(client, "Permission Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Permission Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_PermissionMenu(client, -1);
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -818,8 +780,7 @@ public int Handler_LoadOthersMenu(Menu menu, MenuAction action, int client, int 
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -836,8 +797,7 @@ public Action Command_LoadOthersProjectsMenu(int client, int selectedclient) //c
 		Menu menu = new Menu(Handler_LoadOthersProjectsMenu);
 		
 		char cSelectedclentName[48];
-		if (IsValidClient(selectedclient))
-			GetClientName(selectedclient, cSelectedclentName, sizeof(cSelectedclentName));
+		if (IsValidClient(selectedclient)) GetClientName(selectedclient, cSelectedclentName, sizeof(cSelectedclentName));
 		else
 		{
 			Build_PrintToChat(client, "Error: Client %i not found", selectedclient);
@@ -848,25 +808,27 @@ public Action Command_LoadOthersProjectsMenu(int client, int selectedclient) //c
 		menu.SetTitle(menuinfo);
 		
 		char cSlot[6];
-		char cDate[11];
+		//char cDate[11];
 		char cPermission[8] = "Private";
 		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 		{
 			IntToString(iSlot, cSlot, sizeof(cSlot));
 			if (DataFileExist(selectedclient, iSlot))
 			{
-				GetDataDate(selectedclient, iSlot, cDate, sizeof(cDate));
+				//GetDataDate(selectedclient, iSlot, cDate, sizeof(cDate));
 				
 				if (g_bPermission[selectedclient][iSlot])
 				{
 					cPermission = "Public";
-					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
+					//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
+					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
 					menu.AddItem(cSlot, menuinfo);
 				}
 				else
 				{
 					cPermission = "Private";
-					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
+					//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
+					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
 					menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 				}
 			}
@@ -906,8 +868,7 @@ public int Handler_LoadOthersProjectsMenu(Menu menu, MenuAction action, int clie
 				g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 				CreateTimer(0.05, Timer_CoolDownFunction, client);
 			}
-			else
-				Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+			else Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		}
 		
 		Command_LoadOthersProjectsMenu(client, g_iSelectedClient[client]);
@@ -935,20 +896,18 @@ public Action Command_CheckCacheMenu(int client, int args)
 		char menuinfo[255];
 		Menu menu = new Menu(Handler_CheckCacheMenu);
 		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System (In Development): RUNNING\n ", PLUGIN_VERSION, g_cCurrentMap);
+		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System: RUNNING\n ", PLUGIN_VERSION, g_cCurrentMap);
 		menu.SetTitle(menuinfo);
 		
 		int iSlot = 0;
-		char cDate[11];
-		char cSlot[6];
+		char cDate[11], cSlot[6];
 		IntToString(iSlot, cSlot, sizeof(cSlot));
 		if (DataFileExist(client, iSlot))
 		{
 			GetDataDate(client, iSlot, cDate, sizeof(cDate));
 			Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
 		}
-		else
-			Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
+		else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
 		
 		menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 		
@@ -969,13 +928,11 @@ public int Handler_CheckCacheMenu(Menu menu, MenuAction action, int client, int 
 		char info[32];
 		menu.GetItem(selection, info, sizeof(info));
 		
-		if (StrEqual("REFRESH", info))
-			Command_CheckCacheMenu(client, 0);
+		if (StrEqual("REFRESH", info)) Command_CheckCacheMenu(client, 0);
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -1028,10 +985,8 @@ public Action Command_CloudMenu(int client, int args)
 		char menuinfo[255];
 		Menu menu = new Menu(Handler_CloudMenu);
 		
-		if(g_SqlRunning)
-			Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ] --- Loading~\n ", PLUGIN_VERSION, ConnectionStatus);
-		else
-			Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ]\n ", PLUGIN_VERSION, ConnectionStatus);
+		if(g_SqlRunning) Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ] --- Loading~\n ", PLUGIN_VERSION, ConnectionStatus);
+		else Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ]\n ", PLUGIN_VERSION, ConnectionStatus);
 		menu.SetTitle(menuinfo);
 		
 		Format(menuinfo, sizeof(menuinfo), " Refresh");
@@ -1079,8 +1034,8 @@ public Action Command_CloudMenu(int client, int args)
 			}
 		}
 		
-		if(g_SqlRunning)	menu.ExitBackButton = false;
-		else	menu.ExitBackButton = true;
+		if(g_SqlRunning) menu.ExitBackButton = false;
+		else menu.ExitBackButton = true;
 		menu.ExitButton = false;
 		menu.Display(client, MENU_TIME_FOREVER);
 	}
@@ -1126,6 +1081,7 @@ public int Handler_CloudMenu(Menu menu, MenuAction action, int client, int selec
 					iCount++;
 				}
 			}
+			
 			Sql_SaveData(client);
 			Handle dp;
 			CreateDataTimer(0.1, Timer_SqlRunning, dp);
@@ -1148,8 +1104,7 @@ public int Handler_CloudMenu(Menu menu, MenuAction action, int client, int selec
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack)
-			Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -1165,8 +1120,7 @@ void LoadData(int loader, int client, int slot) // Load Data from data file (loa
 	char cFileName[255];
 	GetBuildPath(client, slot, cFileName);
 	
-	if (FileExists(cFileName))
-		LoadFunction(loader, slot, cFileName);
+	if (FileExists(cFileName)) LoadFunction(loader, slot, cFileName);
 }
 
 void LoadDataSteamID(int loader, char[] SteamID64, int slot) // Load Data from data file (loader, client steamid64 in data file, slot number) //Special!! X Cache
@@ -1174,8 +1128,7 @@ void LoadDataSteamID(int loader, char[] SteamID64, int slot) // Load Data from d
 	char cFileName[255];
 	BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBSaveSystem/%s&%s@%i.tf2sb", g_cCurrentMap, SteamID64, slot);
 	
-	if (FileExists(cFileName))
-		LoadFunction(loader, slot, cFileName);
+	if (FileExists(cFileName)) LoadFunction(loader, slot, cFileName);
 }
 
 void LoadFunction(int loader, int slot, char cFileName[255])
@@ -1206,19 +1159,16 @@ void LoadFunction(int loader, int slot, char cFileName[255])
 				{
 					if (StrContains(szLoadString, "ent") != -1 && StrContains(szLoadString, ";") == -1) //Map name have ent sytax??? Holy
 					{
-						if (LoadProps(loader, szLoadString))
-							g_iCountEntity++;
+						if (LoadProps(loader, szLoadString)) g_iCountEntity++;
 						g_iCountLoop++;
 					}
-					if (IsEndOfFile(g_hFileEditting[loader]))
-						break;
+					
+					if (IsEndOfFile(g_hFileEditting[loader])) break;
 				}
 				CloseHandle(g_hFileEditting[loader]);
 				
-				if (slot == 0)
-					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
-				else
-					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
+				if (slot == 0) Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+				else Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
 			}
 		}
 	}
@@ -1245,24 +1195,20 @@ public Action Timer_LoadProps(Handle timer, Handle dp)
 			for (int i = 0; i < Fileline; i++)
 			ReadFileLine(g_hFileEditting[loader], szLoadString, sizeof(szLoadString));
 			
-			for (int i = 0; i < GetConVarInt(cviLoadProps); i++)if (ReadFileLine(g_hFileEditting[loader], szLoadString, sizeof(szLoadString)))
+			for (int i = 0; i < GetConVarInt(cviLoadProps); i++) if (ReadFileLine(g_hFileEditting[loader], szLoadString, sizeof(szLoadString)))
 			{
 				Fileline++;
 				if (StrContains(szLoadString, "ent") != -1 && StrContains(szLoadString, "models/") != -1 && StrContains(szLoadString, "prop_") != -1)// && StrContains(szLoadString, ";") == -1) //Map name have ent sytax??? Holy
 				{
-					if (LoadProps(loader, szLoadString))
-						g_iCountEntity++;
+					if (LoadProps(loader, szLoadString)) g_iCountEntity++;
 					g_iCountLoop++;
 				}
-				if (IsEndOfFile(g_hFileEditting[loader]))
-					break;
+				if (IsEndOfFile(g_hFileEditting[loader])) break;
 			}
 			if (IsEndOfFile(g_hFileEditting[loader]))
 			{
-				if (slot == 0)
-					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
-				else
-					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
+				if (slot == 0) Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+				else Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
 			}
 			else
 			{
@@ -1335,17 +1281,14 @@ bool LoadProps(int loader, char[] szLoadString)
 		SetEntProp(Obj_LoadEntity, Prop_Send, "m_nSolidType", 6);
 		SetEntProp(Obj_LoadEntity, Prop_Data, "m_nSolidType", 6);
 	}
-	else if (StrEqual(szClass, "prop_physics"))
-		Obj_LoadEntity = CreateEntityByName("prop_physics_override");
-	else if (StrContains(szClass, "prop_physics") >= 0)
-		Obj_LoadEntity = CreateEntityByName(szClass);
+	else if (StrEqual(szClass, "prop_physics")) Obj_LoadEntity = CreateEntityByName("prop_physics_override");
+	else if (StrContains(szClass, "prop_physics") >= 0) Obj_LoadEntity = CreateEntityByName(szClass);
 	
 	if (Obj_LoadEntity > MaxClients && IsValidEntity(Obj_LoadEntity))
 	{
 		if (Build_RegisterEntityOwner(Obj_LoadEntity, loader))
 		{
-			if (!IsModelPrecached(szModel))
-				PrecacheModel(szModel);
+			if (!IsModelPrecached(szModel)) PrecacheModel(szModel);
 			
 			DispatchKeyValue(Obj_LoadEntity, "model", szModel);
 			TeleportEntity(Obj_LoadEntity, fOrigin, fAngles, NULL_VECTOR);
@@ -1353,8 +1296,8 @@ bool LoadProps(int loader, char[] szLoadString)
 			
 			SetEntProp(Obj_LoadEntity, Prop_Data, "m_CollisionGroup", iCollision);
 			SetEntPropFloat(Obj_LoadEntity, Prop_Send, "m_flModelScale", fSize);
-			if(iAlpha < 255)	SetEntityRenderMode(Obj_LoadEntity, RENDER_TRANSCOLOR);
-			else	SetEntityRenderMode(Obj_LoadEntity, RENDER_NORMAL);
+			if(iAlpha < 255) SetEntityRenderMode(Obj_LoadEntity, RENDER_TRANSCOLOR);
+			else SetEntityRenderMode(Obj_LoadEntity, RENDER_NORMAL);
 			SetEntityRenderColor(Obj_LoadEntity, iRed, iGreen, iBlue, iAlpha);
 			switch (iRenderFx)
 			{
@@ -1386,23 +1329,22 @@ bool LoadProps(int loader, char[] szLoadString)
 			//light bulb
 			if (StrEqual(szModel, "models/props_2fort/lightbulb001.mdl"))
 			{
-				//char 
-				//fAngles[1] = StringToFloat(szBuffer[9]); //brightness
-				//fAngles[2] = StringToFloat(szBuffer[10]); //Red
-				//fAngles[2] = StringToFloat(szBuffer[10]); //Green
-				//fAngles[2] = StringToFloat(szBuffer[10]); //Blue
-				
 				int Obj_LightDynamic = CreateEntityByName("light_dynamic");
+
+				SetVariantString("500");
+				AcceptEntityInput(Obj_LightDynamic, "distance", -1);
+				
+				if (iSkin > 7) iSkin = 7;
+				char szBrightness[2];
+				IntToString(iSkin, szBrightness, sizeof(szBrightness));
+				SetVariantString(szBrightness);
+				AcceptEntityInput(Obj_LightDynamic, "brightness", -1);
+				
+				SetVariantString("2");
+				AcceptEntityInput(Obj_LightDynamic, "style", -1);
 				
 				char szColor[32];
 				Format(szColor, sizeof(szColor), "%i %i %i", iRed, iGreen, iBlue);
-				
-				SetVariantString("500");
-				AcceptEntityInput(Obj_LightDynamic, "distance", -1);
-				SetVariantString("7");
-				AcceptEntityInput(Obj_LightDynamic, "brightness", -1);
-				SetVariantString("2");
-				AcceptEntityInput(Obj_LightDynamic, "style", -1);
 				SetVariantString(szColor);
 				AcceptEntityInput(Obj_LightDynamic, "color", -1);
 				
@@ -1431,7 +1373,7 @@ bool LoadProps(int loader, char[] szLoadString)
 			}
 			
 			//door
-			if (StrEqual(szModel, "models/props_lab/blastdoor001c.mdl") && !StrContains(szName, "door") && StrContains(szName, "Blastdoor"))
+			if (StrEqual(szModel, "models/props_lab/blastdoor001c.mdl") && StrContains(szName, "door") == -1 && StrContains(szName, "Blastdoor") != -1)
 			{
 				if (strlen(szBuffer[17]) == 0)
 				{
@@ -1502,9 +1444,9 @@ bool LoadProps(int loader, char[] szLoadString)
 			
 			return true;
 		}
-		else
-			RemoveEdict(Obj_LoadEntity);
+		else RemoveEdict(Obj_LoadEntity);
 	}
+	
 	return false;
 }
 
@@ -1595,20 +1537,16 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 		
 		if (FileExists(cFileName) && g_iCountEntity == 0)
 		{
-			if (slot != 0)
-				Build_PrintToChat(client, "Save Result >> ERROR!!!. You didnt build anything, please build something and save again.");
+			if (slot != 0) Build_PrintToChat(client, "Save Result >> ERROR!!!. You didnt build anything, please build something and save again.");
 			
 			DeleteFile(cFileName);
 		}
-		else if (slot != 0)
-			Build_PrintToChat(client, "Save Result >> Saved: \x04%i\x01, Error:\x04 0\x01 >> Saved in Slot\x04%i\x01", g_iCountEntity, slot);
+		else if (slot != 0) Build_PrintToChat(client, "Save Result >> Saved: \x04%i\x01, Error:\x04 0\x01 >> Saved in Slot\x04%i\x01", g_iCountEntity, slot);
 	}
 	if (g_iCountEntity == -1)
 	{
-		if (slot == 0)
-			Build_PrintToChat(client, "Cache Result >> ERROR!!!, please contact server admin.");
-		else
-			Build_PrintToChat(client, "Save Result >> ERROR!!! >> Error in Slot\x04%i\x01, please contact server admin.", slot);
+		if (slot == 0) Build_PrintToChat(client, "Cache Result >> ERROR!!!, please contact server admin.");
+		else Build_PrintToChat(client, "Save Result >> ERROR!!! >> Error in Slot\x04%i\x01, please contact server admin.", slot);
 	}
 }
 
@@ -1622,10 +1560,8 @@ void DeleteData(int client, int slot) // Delete Data from data file
 	{
 		DeleteFile(cFileName);
 		
-		if (DataFileExist(client, slot))
-			Build_PrintToChat(client, "Fail to deleted Slot\x04%i\x01 Data, please contact server admin.", slot);
-		else
-			Build_PrintToChat(client, "Deleted Slot\x04%i\x01 Data successfully", slot);
+		if (DataFileExist(client, slot)) Build_PrintToChat(client, "Fail to deleted Slot\x04%i\x01 Data, please contact server admin.", slot);
+		else Build_PrintToChat(client, "Deleted Slot\x04%i\x01 Data successfully", slot);
 	}
 }
 
@@ -1642,7 +1578,7 @@ void GetDataDate(int client, int slot, char[] data, int maxlength) //Get the dat
 		{
 			char cDate[11], szBuffer[6][255];
 			char szLoadString[255];
-			for (int i = 1; i < MAX_HOOK_ENTITIES; i++)if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
+			for (int i = 1; i < MAX_HOOK_ENTITIES; i++) if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
 			{
 				if (StrContains(szLoadString, "Saved on :") != -1)
 				{
@@ -1652,6 +1588,7 @@ void GetDataDate(int client, int slot, char[] data, int maxlength) //Get the dat
 					break;
 				}
 			}
+			
 			CloseHandle(g_hFileEditting[client]);
 		}
 	}
@@ -1670,7 +1607,7 @@ int GetDataProps(int client, int slot) //Get how many props inside data file
 			int iProps;
 			char szBuffer[9][255];
 			char szLoadString[255];
-			for (int i = 1; i < MAX_HOOK_ENTITIES; i++)if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
+			for (int i = 1; i < MAX_HOOK_ENTITIES; i++) if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
 			{
 				if (StrContains(szLoadString, "Data File End |") != -1)
 				{
@@ -1679,10 +1616,12 @@ int GetDataProps(int client, int slot) //Get how many props inside data file
 					break;
 				}
 			}
+			
 			CloseHandle(g_hFileEditting[client]);
 			return iProps;
 		}
 	}
+	
 	return -1;
 }
 
@@ -1692,10 +1631,8 @@ void GetBuildPath(int client, int slot, char[] cFileNameout) //Get the sourcemod
 	GetClientSteamID(client, SteamID64);
 	
 	char cFileName[255];
-	if (slot == 0)
-		BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBCache/%s&%s.tf2sb", g_cCurrentMap, SteamID64);
-	else
-		BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBSaveSystem/%s&%s@%i.tf2sb", g_cCurrentMap, SteamID64, slot);
+	if (slot == 0) BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBCache/%s&%s.tf2sb", g_cCurrentMap, SteamID64);
+	else BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBSaveSystem/%s&%s@%i.tf2sb", g_cCurrentMap, SteamID64, slot);
 	
 	strcopy(cFileNameout, sizeof(cFileName), cFileName);
 }
@@ -1714,8 +1651,8 @@ bool DataFileExist(int client, int slot) //Is the data file exist? true : false
 	char cFileName[255];
 	GetBuildPath(client, slot, cFileName);
 	
-	if (FileExists(cFileName))
-		return true;
+	if (FileExists(cFileName)) return true;
+	
 	return false;
 }
 
@@ -1730,8 +1667,7 @@ stock bool IsValidClient(int client)
 int GetClientInGame()
 {
 	int iCount = 0;
-	for (int i = 1; i < MAXPLAYERS; i++)if (IsValidClient(i) && !IsFakeClient(i))
-		iCount++;
+	for (int i = 1; i < MAXPLAYERS; i++) if (IsValidClient(i) && !IsFakeClient(i)) iCount++;
 	
 	return iCount;
 }
@@ -1749,13 +1685,13 @@ void TagsCheck(const char[] tag) //TF2Stat.sp
 		SetConVarString(hTags, newTags);
 		GetConVarString(hTags, tags, sizeof(tags));
 	}
+	
 	CloseHandle(hTags);
 }
 //------------[ Cloud ]------------------------------------------------------------------
 public void SQLErrorCheckCallback(Handle owner, Handle hndl, const char[] error, any data) 
 {
-	if (!StrEqual(error, ""))
-		LogError(error);
+	if (!StrEqual(error, "")) LogError(error);
 }
 
 //GetRow (How many props)----------
@@ -1819,7 +1755,9 @@ public void SQLLoadQuery(Handle owner, Handle hndl, const char[] error, any data
 		iSkin = SQL_FetchInt(hndl, 16);
 		SQL_FetchString(hndl, 17, szName, sizeof(szName));
 	}
+	
 	Format(szLoadString, sizeof(szLoadString), "ent %s %s %f %f %f %f %f %f %i %f %i %i %i %i %i %i %s %s %s %s %s %s", szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, szName, "", "", "", "","");
+	
 	if(LoadProps(data, szLoadString))
 	{
 		
@@ -1914,8 +1852,7 @@ public Action Timer_SqlRunning(Handle timer, Handle dp)
 	int iCount = ReadPackCell(dp);
 	int iType = ReadPackCell(dp);
 	
-	if(!IsValidClient(client))
-		return;
+	if(!IsValidClient(client)) return;
 	if(g_iCloudRow[client] >= iCount && iType == -1)
 	{
 		g_SqlRunning = false;
@@ -1942,5 +1879,3 @@ public Action Timer_SqlRunning(Handle timer, Handle dp)
 		Command_CloudMenu(client, 0);
 	}
 }
-
-//---------------------------------------------------------------------------------------
