@@ -17,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.2"
+#define PLUGIN_VERSION "9.3"
 
 #include <sourcemod>
 #include <sdktools>
@@ -33,7 +33,7 @@ public Plugin myinfo =
 	author = PLUGIN_AUTHOR, 
 	description = "Save System for TF2SandBox", 
 	version = PLUGIN_VERSION, 
-	url = "http://steamcommunity.com/id/battlefieldduck/"
+	url = "https://github.com/tf2-sandbox-studio/Module-SaveSystem"
 };
 
 Handle g_hFileEditting[MAXPLAYERS + 1] = INVALID_HANDLE;
@@ -1228,11 +1228,11 @@ public Action Timer_LoadProps(Handle timer, Handle dp)
 bool LoadProps(int loader, char[] szLoadString)
 {
 	float fOrigin[3], fAngles[3], fSize;
-	char szModel[128], szClass[64], szFormatStr[255], DoorIndex[5], szBuffer[20][255], szName[128];
+	char szModel[128], szClass[64], szFormatStr[255], DoorIndex[5], szBuffer[30][255], szName[128];
 	int Obj_LoadEntity, iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iRandom, iSkin;
 	RenderFx FxRender = RENDERFX_NONE;
 	
-	ExplodeString(szLoadString, " ", szBuffer, 20, 255);
+	ExplodeString(szLoadString, " ", szBuffer, 30, 255);
 	Format(szClass, sizeof(szClass), "%s", szBuffer[1]);
 	Format(szModel, sizeof(szModel), "%s", szBuffer[2]);
 	fOrigin[0] = StringToFloat(szBuffer[3]);
@@ -1250,7 +1250,19 @@ bool LoadProps(int loader, char[] szLoadString)
 	iRenderFx = StringToInt(szBuffer[15]);
 	iSkin = StringToInt(szBuffer[16]);
 	Format(szName, sizeof(szName), "%s", szBuffer[17]);
-
+	
+	for (int i = 18; i < 30; i++)
+	{
+		if (!StrEqual(szBuffer[i], ""))
+		{
+			Format(szName, sizeof(szName), "%s %s", szName, szBuffer[i]);
+		}
+		else
+		{
+			break;
+		}
+	}
+	
 	if (strlen(szBuffer[9]) == 0)
 		iCollision = 5;
 	if (strlen(szBuffer[10]) == 0)
@@ -1321,7 +1333,10 @@ bool LoadProps(int loader, char[] szLoadString)
 			}
 			SetEntityRenderFx(Obj_LoadEntity, FxRender);
 			SetEntProp(Obj_LoadEntity, Prop_Send, "m_nSkin", iSkin);
+			
+			ReplaceString(szName, sizeof(szName), "\n", "", false);
 			SetEntPropString(Obj_LoadEntity, Prop_Data, "m_iName", szName);
+			
 			//SetVariantInt(iHealth);
 			//AcceptEntityInput(Obj_LoadEntity, "sethealth", -1);
 			//AcceptEntityInput(Obj_LoadEntity, "disablemotion", -1);
