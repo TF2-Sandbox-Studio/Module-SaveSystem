@@ -17,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.3"
+#define PLUGIN_VERSION "9.4"
 
 #include <sourcemod>
 #include <sdktools>
@@ -48,8 +48,8 @@ Handle cvPhysicsSpamProtect;
 
 char g_cCurrentMap[64];
 
-bool g_bEnabled = true;
-bool g_bPermission[MAXPLAYERS + 1][51]; //client, slot
+#define MAX_SLOT 50
+bool g_bPermission[MAXPLAYERS + 1][MAX_SLOT + 1]; //client, slot
 
 //Cache system
 bool g_bIsClientInServer[MAXPLAYERS + 1] = false;
@@ -72,13 +72,12 @@ public void OnPluginStart()
 {
 	char error[255];
 	g_DB = SQL_Connect(dbconfig, true, error, sizeof(error));
-	if(g_DB != INVALID_HANDLE)
-		SQL_SetCharset(g_DB, "utf8");
+	if(g_DB != INVALID_HANDLE) SQL_SetCharset(g_DB, "utf8");
 	
 	CreateConVar("sm_tf2sb_ss_version", PLUGIN_VERSION, "", FCVAR_SPONLY | FCVAR_NOTIFY);
 	
 	cvg_iCoolDownsec = CreateConVar("sm_tf2sb_ss_cooldownsec", "2", "(1 - 50) Set CoolDown seconds to prevent flooding.", 0, true, 1.0, true, 50.0);
-	cviStoreSlot = CreateConVar("sm_tf2sb_ss_storeslots", "4", "(1 - 50) How many slots for client to save", 0, true, 1.0, true, 50.0);
+	cviStoreSlot = CreateConVar("sm_tf2sb_ss_storeslots", "4", "(1 - 50) How many slots for client to save", 0, true, 1.0, true, float(MAX_SLOT));
 	cviLoadMode = CreateConVar("sm_tf2sb_ss_loadmode", "1", "1 = Load instantly, 2 = Load Props by Timer (Slower but less lag?)", 0, true, 1.0, true, 2.0);
 	cviLoadSec = CreateConVar("sm_tf2sb_ss_loadsec", "0.01", "(0.01 - 1.00) Load Props/Sec (Work on sm_tf2sb_ss_loadmode 2 only)", 0, true, 0.01, true, 1.0);
 	cviLoadProps = CreateConVar("sm_tf2sb_ss_loadprops", "3", "(1 - 60) Load Sec/Props (Work on sm_tf2sb_ss_loadmode 2 only)", 0, true, 1.0, true, 60.0);
@@ -88,6 +87,7 @@ public void OnPluginStart()
 	
 	RegAdminCmd("sm_ss", Command_MainMenu, 0, "Open SaveSystem menu");
 	RegAdminCmd("sm_ssload", Command_LoadDataFromDatabase, ADMFLAG_GENERIC, "Usage: sm_ssload <targetname|steamid64> <slot>");
+	RegAdminCmd("sm_ssname", Command_SetDataName, 0, "Usage: sm_ssname <slot> <name>");
 	
 	char cCheckPath[128];
 	BuildPath(Path_SM, cCheckPath, sizeof(cCheckPath), "data/TF2SBSaveSystem");
@@ -96,9 +96,13 @@ public void OnPluginStart()
 		CreateDirectory(cCheckPath, 511);
 		
 		if (DirExists(cCheckPath))
+		{
 			PrintToServer("[TF2SB] Folder TF2SBSaveSystem created under addons/sourcemod/data/ sucessfully!");
+		}
 		else
+		{
 			SetFailState("[TF2SB] Failed to create directory at addons/sourcemod/data/TF2SBSaveSystem/ - Please manually create that path and reload this plugin.");
+		}
 	}
 	
 	BuildPath(Path_SM, cCheckPath, sizeof(cCheckPath), "data/TF2SBCache");
@@ -107,9 +111,13 @@ public void OnPluginStart()
 		CreateDirectory(cCheckPath, 511);
 		
 		if (DirExists(cCheckPath))
+		{
 			PrintToServer("[TF2SB] Folder TF2SBCache created under addons/sourcemod/data/ sucessfully!");
+		}
 		else
+		{
 			SetFailState("[TF2SB] Failed to create directory at addons/sourcemod/data/TF2SBCache/ - Please manually create that path and reload this plugin.");
+		}
 	}
 	
 	AutoExecConfig();
@@ -121,7 +129,9 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 	if (Build_IsClientValid(client, client))
 	{
 		if (g_iCoolDown[client] != 0)
+		{
 			Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		}
 		else if (args == 2)
 		{
 			char cTarget[20], cSlot[8];
@@ -150,12 +160,50 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 				if (DataFileExist(targets[0], StringToInt(cSlot))) LoadData(client, targets[0], StringToInt(cSlot));
 				else Build_PrintToChat(client, "Error: Fail to find the Data File...");
 			}
+			
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
 		else Build_PrintToChat(client, "Usage: sm_ssload <\x04targetname\x01|\x04steamid\x01> <\x04slot\x01>");
 	}
-	return;
+}
+
+public Action Command_SetDataName(int client, int args)
+{
+	if (!Build_IsClientValid(client, client))
+	{
+		return;
+	}
+	
+	if (args < 2)
+	{
+		Build_PrintToChat(client, "Usage: sm_ssname <\x04slot\x01> <\x04name\x01>");
+		return;
+	}
+	
+	char cSlot[8];
+	GetCmdArg(1, cSlot, sizeof(cSlot));
+	
+	int slot = StringToInt(cSlot);
+	if (slot == 0)
+	{
+		Build_PrintToChat(client, "Usage: sm_ssname <\x04slot\x01> <\x04name\x01>");
+		return;
+	}
+	
+	char cName[255];
+	GetCmdArgString(cName, sizeof(cName));
+	
+	char szBuffer[10][255];
+	ExplodeString(cName, " ", szBuffer, 10, 255);
+	
+	Format(cName, sizeof(cName), "%s %s %s", szBuffer[1], szBuffer[2], szBuffer[3]);
+	
+	TrimString(cName);
+	
+	SetDataName(client, slot, cName);
+	
+	Build_PrintToChat(client, "Set slot \x04%i\x01 name to \x04%s\x01!", slot, cName);
 }
 
 public void OnMapStart()
@@ -269,38 +317,34 @@ public Action Timer_Load(Handle timer, int client)
 *******************************************************************************************/
 public Action Command_CacheMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[1024];
+	Menu menu = new Menu(Handler_CacheMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache Menu v%s\n \nThe server had saved your props when you disconnected.\nWould you like to load the Cache?\n ", PLUGIN_VERSION);
+	menu.SetTitle(menuinfo);
+	
+	int iSlot = 0;
+	char cDate[11], cSlot[6];
+	IntToString(iSlot, cSlot, sizeof(cSlot));
+	
+	if (DataFileExist(client, iSlot))
 	{
-		char menuinfo[1024];
-		Menu menu = new Menu(Handler_CacheMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache Menu v%s\n \nThe server had saved your props when you disconnected.\nWould you like to load the Cache?\n ", PLUGIN_VERSION);
-		menu.SetTitle(menuinfo);
-		
-		int iSlot = 0;
-		char cDate[11], cSlot[6];
-		IntToString(iSlot, cSlot, sizeof(cSlot));
-		
-		if (DataFileExist(client, iSlot))
-		{
-			GetDataDate(client, iSlot, cDate, sizeof(cDate));
-			Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
-		}
-		else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
-		
-		menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-		
-		Format(menuinfo, sizeof(menuinfo), " Yes, Load it.", client);
-		menu.AddItem("LOAD", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " No, Dont't load it", client);
-		menu.AddItem("DELETE", menuinfo);
-		
-		menu.ExitBackButton = false;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		GetDataDate(client, iSlot, cDate, sizeof(cDate));
+		Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
 	}
-	return Plugin_Handled;
+	else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
+	
+	menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+	
+	Format(menuinfo, sizeof(menuinfo), " Yes, Load it.", client);
+	menu.AddItem("LOAD", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " No, Dont't load it", client);
+	menu.AddItem("DELETE", menuinfo);
+	
+	menu.ExitBackButton = false;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_CacheMenu(Menu menu, MenuAction action, int client, int selection)
@@ -343,40 +387,39 @@ public Action Command_MainMenu(int client, int args)
 		Build_PrintToAll(" Cloud Storage is currently Loading!");
 		return Plugin_Handled;
 	}
-	if (g_bEnabled)
-	{
-		char menuinfo[1024];
-		Menu menu = new Menu(Handler_MainMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n ", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Load... ", client);
-		menu.AddItem("LOAD", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Save... ", client);
-		menu.AddItem("SAVE", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Delete... ", client);
-		menu.AddItem("DELETE", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Set Permission... ", client);
-		menu.AddItem("PERMISSION", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Load other's projects... ", client);
-		if (GetClientInGame() > 1) menu.AddItem("LOADOTHERS", menuinfo);
-		else menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
-		
-		Format(menuinfo, sizeof(menuinfo), " Check Cache System... ", client);
-		menu.AddItem("CACHE", menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Connect to Cloud Storage... ", client);
-		menu.AddItem("CLOUD", menuinfo);
-		
-		menu.ExitBackButton = false;
-		menu.ExitButton = true;
-		menu.Display(client, MENU_TIME_FOREVER);
-	}
+	
+	char menuinfo[1024];
+	Menu menu = new Menu(Handler_MainMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n ", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Load... ", client);
+	menu.AddItem("LOAD", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Save... ", client);
+	menu.AddItem("SAVE", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Delete... ", client);
+	menu.AddItem("DELETE", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Set Permission... ", client);
+	menu.AddItem("PERMISSION", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Load other's projects... ", client);
+	if (GetClientInGame() > 1) menu.AddItem("LOADOTHERS", menuinfo);
+	else menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
+	
+	Format(menuinfo, sizeof(menuinfo), " Check Cache System... ", client);
+	menu.AddItem("CACHE", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Connect to Cloud Storage... ", client);
+	menu.AddItem("CLOUD", menuinfo);
+	
+	menu.ExitBackButton = false;
+	menu.ExitButton = true;
+	menu.Display(client, MENU_TIME_FOREVER);
+	
 	return Plugin_Handled;
 }
 
@@ -401,6 +444,7 @@ public int Handler_MainMenu(Menu menu, MenuAction action, int client, int select
 			WritePackCell(dp, 0);
 			WritePackCell(dp, 25);
 			g_SqlRunning = true;
+			
 			Command_CloudMenu(client, -1);
 		}
 	}
@@ -417,36 +461,32 @@ public int Handler_MainMenu(Menu menu, MenuAction action, int client, int select
 *******************************************************************************************/
 public Action Command_LoadMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_LoadMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to LOAD....", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[6], cDate[11];
+	for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_LoadMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to LOAD....", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[6], cDate[11];
-		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
+		IntToString(iSlot, cSlot, sizeof(cSlot));
+		if (DataFileExist(client, iSlot))
 		{
-			IntToString(iSlot, cSlot, sizeof(cSlot));
-			if (DataFileExist(client, iSlot))
-			{
-				GetDataDate(client, iSlot, cDate, sizeof(cDate));
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props)", iSlot, cDate, GetDataProps(client, iSlot));
-				menu.AddItem(cSlot, menuinfo);
-			}
-			else
-			{
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
-				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-			}
+			GetDataDate(client, iSlot, cDate, sizeof(cDate));
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (%s, %i Props)[%s]", iSlot, cDate, GetDataProps(client, iSlot), GetDataName(client, iSlot));
+			menu.AddItem(cSlot, menuinfo);
 		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		else
+		{
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
+			menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+		}
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_LoadMenu(Menu menu, MenuAction action, int client, int selection)
@@ -470,7 +510,10 @@ public int Handler_LoadMenu(Menu menu, MenuAction action, int client, int select
 	}
 	else if (action == MenuAction_Cancel)
 	{
-		if (selection == MenuCancel_ExitBack) Command_MainMenu(client, -1);
+		if (selection == MenuCancel_ExitBack)
+		{
+			Command_MainMenu(client, -1);
+		}
 	}
 	else if (action == MenuAction_End)
 		delete menu;
@@ -481,37 +524,33 @@ public int Handler_LoadMenu(Menu menu, MenuAction action, int client, int select
 *******************************************************************************************/
 public Action Command_SaveMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_SaveMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to SAVE....", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[6];
+	char cDate[11];
+	for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_SaveMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to SAVE....", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[6];
-		char cDate[11];
-		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
+		IntToString(iSlot, cSlot, sizeof(cSlot));
+		if (DataFileExist(client, iSlot))
 		{
-			IntToString(iSlot, cSlot, sizeof(cSlot));
-			if (DataFileExist(client, iSlot))
-			{
-				GetDataDate(client, iSlot, cDate, sizeof(cDate));
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props)", iSlot, cDate, GetDataProps(client, iSlot));
-				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-			}
-			else
-			{
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
-				menu.AddItem(cSlot, menuinfo);
-			}
+			GetDataDate(client, iSlot, cDate, sizeof(cDate));
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (%s, %i Props)[%s]", iSlot, cDate, GetDataProps(client, iSlot), GetDataName(client, iSlot));
+			menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		else
+		{
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
+			menu.AddItem(cSlot, menuinfo);
+		}
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_SaveMenu(Menu menu, MenuAction action, int client, int selection)
@@ -546,36 +585,32 @@ public int Handler_SaveMenu(Menu menu, MenuAction action, int client, int select
 *******************************************************************************************/
 public Action Command_DeleteMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_DeleteMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to DELETE....", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[6], cDate[11];
+	for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_DeleteMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \nSelect a Slot to DELETE....", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[6], cDate[11];
-		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
+		IntToString(iSlot, cSlot, sizeof(cSlot));
+		if (DataFileExist(client, iSlot))
 		{
-			IntToString(iSlot, cSlot, sizeof(cSlot));
-			if (DataFileExist(client, iSlot))
-			{
-				GetDataDate(client, iSlot, cDate, sizeof(cDate));
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props)", iSlot, cDate, GetDataProps(client, iSlot));
-				menu.AddItem(cSlot, menuinfo);
-			}
-			else
-			{
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
-				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-			}
+			GetDataDate(client, iSlot, cDate, sizeof(cDate));
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (%s, %i Props)[%s]", iSlot, cDate, GetDataProps(client, iSlot), GetDataName(client, iSlot));
+			menu.AddItem(cSlot, menuinfo);
 		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		else
+		{
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data)", iSlot);
+			menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+		}
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_DeleteMenu(Menu menu, MenuAction action, int client, int selection)
@@ -602,26 +637,24 @@ public int Handler_DeleteMenu(Menu menu, MenuAction action, int client, int sele
 *******************************************************************************************/
 public Action Command_DeleteConfirmMenu(int client, int iSlot)
 {
-	if (g_bEnabled)
-	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_DeleteConfirmMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \n Are you sure to DELETE slot %i?", PLUGIN_VERSION, g_cCurrentMap, iSlot);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[8];
-		IntToString(iSlot, cSlot, sizeof(cSlot));
-		Format(menuinfo, sizeof(menuinfo), " Yes, Delete it.");
-		menu.AddItem(cSlot, menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " No, go back!");
-		menu.AddItem("NO", menuinfo);
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
-	}
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_DeleteConfirmMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s \n \n Are you sure to DELETE slot %i?", PLUGIN_VERSION, g_cCurrentMap, iSlot);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[8];
+	IntToString(iSlot, cSlot, sizeof(cSlot));
+	Format(menuinfo, sizeof(menuinfo), " Yes, Delete it.");
+	menu.AddItem(cSlot, menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " No, go back!");
+	menu.AddItem("NO", menuinfo);
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
+	
 	return Plugin_Handled;
 }
 
@@ -649,45 +682,38 @@ public int Handler_DeleteConfirmMenu(Menu menu, MenuAction action, int client, i
 *******************************************************************************************/
 public Action Command_PermissionMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_PermissionMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nSet Permission on project:\n [Private]: Only you can load the project (Default)\n [Public]: Let others to load your project\n ", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[6];
+	//char cDate[11];
+	char cPermission[8] = "Private";
+	for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_PermissionMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nSet Permission on project:\n [Private]: Only you can load the project (Default)\n [Public]: Let others to load your project\n ", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[6];
-		//char cDate[11];
-		char cPermission[8] = "Private";
-		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
+		IntToString(iSlot, cSlot, sizeof(cSlot));
+		if (DataFileExist(client, iSlot))
 		{
-			IntToString(iSlot, cSlot, sizeof(cSlot));
-			if (DataFileExist(client, iSlot))
-			{
-				//GetDataDate(client, iSlot, cDate, sizeof(cDate));
-				
-				if (g_bPermission[client][iSlot])
-					cPermission = "Public";
-				else
-					cPermission = "Private";
-				
-				//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(client, iSlot), cPermission);
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
-				menu.AddItem(cSlot, menuinfo);
-			}
+			if (g_bPermission[client][iSlot])
+				cPermission = "Public";
 			else
-			{
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data) : [Private]", iSlot);
-				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-			}
+				cPermission = "Private";
+			
+			Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(client, iSlot), cPermission);
+			menu.AddItem(cSlot, menuinfo);
 		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		else
+		{
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data): [Private]", iSlot);
+			menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+		}
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_PermissionMenu(Menu menu, MenuAction action, int client, int selection)
@@ -732,30 +758,26 @@ public int Handler_PermissionMenu(Menu menu, MenuAction action, int client, int 
 *******************************************************************************************/
 public Action Command_LoadOthersMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_LoadOthersMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nLoad others project,\nPlease select a Player:\n ", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	char cClient[4];
+	char cName[48];
+	for (int i = 1; i < MAXPLAYERS; i++)if (IsValidClient(i) && i != client && !IsFakeClient(i))
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_LoadOthersMenu);
+		IntToString(i, cClient, sizeof(cClient));
+		GetClientName(i, cName, sizeof(cName));
 		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nLoad others project,\nPlease select a Player:\n ", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		char cClient[4];
-		char cName[48];
-		for (int i = 1; i < MAXPLAYERS; i++)if (IsValidClient(i) && i != client && !IsFakeClient(i))
-		{
-			IntToString(i, cClient, sizeof(cClient));
-			GetClientName(i, cName, sizeof(cName));
-			
-			Format(menuinfo, sizeof(menuinfo), " %s", cName);
-			menu.AddItem(cClient, menuinfo);
-		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		Format(menuinfo, sizeof(menuinfo), " %s", cName);
+		menu.AddItem(cClient, menuinfo);
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_LoadOthersMenu(Menu menu, MenuAction action, int client, int selection)
@@ -791,59 +813,50 @@ public int Handler_LoadOthersMenu(Menu menu, MenuAction action, int client, int 
 *******************************************************************************************/
 public Action Command_LoadOthersProjectsMenu(int client, int selectedclient) //client, selected client
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_LoadOthersProjectsMenu);
+	
+	char cSelectedclentName[48];
+	if (IsValidClient(selectedclient)) GetClientName(selectedclient, cSelectedclentName, sizeof(cSelectedclentName));
+	else
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_LoadOthersProjectsMenu);
-		
-		char cSelectedclentName[48];
-		if (IsValidClient(selectedclient)) GetClientName(selectedclient, cSelectedclentName, sizeof(cSelectedclentName));
-		else
+		Build_PrintToChat(client, "Error: Client %i not found", selectedclient);
+		Command_LoadOthersMenu(client, -1);
+	}
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nSelected Player: %s\n \nSelect a Slot to LOAD....", PLUGIN_VERSION, g_cCurrentMap, cSelectedclentName);
+	menu.SetTitle(menuinfo);
+	
+	char cSlot[6];
+	char cPermission[8] = "Private";
+	for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
+	{
+		IntToString(iSlot, cSlot, sizeof(cSlot));
+		if (DataFileExist(selectedclient, iSlot))
 		{
-			Build_PrintToChat(client, "Error: Client %i not found", selectedclient);
-			Command_LoadOthersMenu(client, -1);
-		}
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s\nMap: %s\n \nSelected Player: %s\n \nSelect a Slot to LOAD....", PLUGIN_VERSION, g_cCurrentMap, cSelectedclentName);
-		menu.SetTitle(menuinfo);
-		
-		char cSlot[6];
-		//char cDate[11];
-		char cPermission[8] = "Private";
-		for (int iSlot = 1; iSlot <= GetConVarInt(cviStoreSlot); iSlot++)
-		{
-			IntToString(iSlot, cSlot, sizeof(cSlot));
-			if (DataFileExist(selectedclient, iSlot))
+			if (g_bPermission[selectedclient][iSlot])
 			{
-				//GetDataDate(selectedclient, iSlot, cDate, sizeof(cDate));
-				
-				if (g_bPermission[selectedclient][iSlot])
-				{
-					cPermission = "Public";
-					//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
-					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
-					menu.AddItem(cSlot, menuinfo);
-				}
-				else
-				{
-					cPermission = "Private";
-					//Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored %s, %i Props) : [%s]", iSlot, cDate, GetDataProps(selectedclient, iSlot), cPermission);
-					Format(menuinfo, sizeof(menuinfo), " Slot %i (Stored) : [%s]", iSlot, cPermission);
-					menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-				}
+				cPermission = "Public";
+				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(client, iSlot), cPermission);
+				menu.AddItem(cSlot, menuinfo);
 			}
 			else
 			{
-				Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data) : [Private]", iSlot);
+				cPermission = "Private";
+				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(client, iSlot), cPermission);
 				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 			}
 		}
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		else
+		{
+			Format(menuinfo, sizeof(menuinfo), " Slot %i (No Data) : [Private]", iSlot);
+			menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+		}
 	}
-	return Plugin_Handled;
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_LoadOthersProjectsMenu(Menu menu, MenuAction action, int client, int selection)
@@ -891,34 +904,30 @@ public int Handler_LoadOthersProjectsMenu(Menu menu, MenuAction action, int clie
 *******************************************************************************************/
 public Action Command_CheckCacheMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_CheckCacheMenu);
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System: RUNNING\n ", PLUGIN_VERSION, g_cCurrentMap);
+	menu.SetTitle(menuinfo);
+	
+	int iSlot = 0;
+	char cDate[11], cSlot[6];
+	IntToString(iSlot, cSlot, sizeof(cSlot));
+	if (DataFileExist(client, iSlot))
 	{
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_CheckCacheMenu);
-		
-		Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System: RUNNING\n ", PLUGIN_VERSION, g_cCurrentMap);
-		menu.SetTitle(menuinfo);
-		
-		int iSlot = 0;
-		char cDate[11], cSlot[6];
-		IntToString(iSlot, cSlot, sizeof(cSlot));
-		if (DataFileExist(client, iSlot))
-		{
-			GetDataDate(client, iSlot, cDate, sizeof(cDate));
-			Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
-		}
-		else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
-		
-		menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
-		
-		Format(menuinfo, sizeof(menuinfo), " Refresh");
-		menu.AddItem("REFRESH", menuinfo);
-		
-		menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
+		GetDataDate(client, iSlot, cDate, sizeof(cDate));
+		Format(menuinfo, sizeof(menuinfo), " Cache (Stored %s, %i Props)", cDate, GetDataProps(client, iSlot));
 	}
-	return Plugin_Handled;
+	else Format(menuinfo, sizeof(menuinfo), " Cache (No Data)");
+	
+	menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
+	
+	Format(menuinfo, sizeof(menuinfo), " Refresh");
+	menu.AddItem("REFRESH", menuinfo);
+	
+	menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_CheckCacheMenu(Menu menu, MenuAction action, int client, int selection)
@@ -943,103 +952,99 @@ public int Handler_CheckCacheMenu(Menu menu, MenuAction action, int client, int 
 *******************************************************************************************/
 public Action Command_CloudMenu(int client, int args)
 {
-	if (g_bEnabled)
+	char ConnectionStatus[32] = "Disconnected";
+	if(g_DB != INVALID_HANDLE) //thx https://editor.datatables.net/generator/
 	{
-		char ConnectionStatus[32] = "Disconnected";
-		if(g_DB != INVALID_HANDLE) //thx https://editor.datatables.net/generator/
-		{
-			char SteamID[32];
-			GetClientSteamID(client, SteamID);
-			char createTableQuery[4096];
-			Format(createTableQuery, sizeof(createTableQuery), 
-				"CREATE TABLE IF NOT EXISTS `%s` ( \
-				`id` int(10) NOT NULL auto_increment, \
-				`szclass` varchar(255), \
-				`szmodel` varchar(255), \
-				`forigin0` numeric(15,6), \
-				`forigin1` numeric(15,6), \
-				`forigin2` numeric(15,6), \
-				`fangles0` numeric(9,6), \
-				`fangles1` numeric(9,6), \
-				`fangles2` numeric(9,6), \
-				`icollision` numeric(2,0), \
-				`fsize` numeric(9,6), \
-				`ired` numeric(3,0), \
-				`igreen` numeric(3,0), \
-				`iblue` numeric(3,0), \
-				`ialpha` numeric(3,0), \
-				`irenderfx` numeric(2,0), \
-				`iskin` numeric(3,0), \
-				`szname` varchar(255), \
-				`reserved1` varchar(255), \
-				`reserved2` varchar(255), \
-				`reserved3` varchar(255), \
-				`reserved4` varchar(255), \
-				`reserved5` varchar(255), \
-				PRIMARY KEY( `id` ));"
-			, SteamID);
-			SQL_TQuery(g_DB, SQLErrorCheckCallback, createTableQuery);
-			ConnectionStatus = "Connected";
-		}
-		
-		char menuinfo[255];
-		Menu menu = new Menu(Handler_CloudMenu);
-		
-		if(g_SqlRunning) Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ] --- Loading~\n ", PLUGIN_VERSION, ConnectionStatus);
-		else Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ]\n ", PLUGIN_VERSION, ConnectionStatus);
-		menu.SetTitle(menuinfo);
-		
-		Format(menuinfo, sizeof(menuinfo), " Refresh");
-		if(g_SqlRunning)
-		{
-			menu.AddItem("REFRESH", menuinfo, ITEMDRAW_DISABLED);
-		}
-		else
-		{
-			menu.AddItem("REFRESH", menuinfo);
-		}
-		
-		Sql_GetRow(client);
-		Format(menuinfo, sizeof(menuinfo), " Storage (%i Props)", g_iCloudRow[client]);
-		menu.AddItem("", menuinfo, ITEMDRAW_DISABLED);
-		
-		if(g_DB == INVALID_HANDLE || g_SqlRunning)
+		char SteamID[32];
+		GetClientSteamID(client, SteamID);
+		char createTableQuery[4096];
+		Format(createTableQuery, sizeof(createTableQuery), 
+			"CREATE TABLE IF NOT EXISTS `%s` ( \
+			`id` int(10) NOT NULL auto_increment, \
+			`szclass` varchar(255), \
+			`szmodel` varchar(255), \
+			`forigin0` numeric(15,6), \
+			`forigin1` numeric(15,6), \
+			`forigin2` numeric(15,6), \
+			`fangles0` numeric(9,6), \
+			`fangles1` numeric(9,6), \
+			`fangles2` numeric(9,6), \
+			`icollision` numeric(2,0), \
+			`fsize` numeric(9,6), \
+			`ired` numeric(3,0), \
+			`igreen` numeric(3,0), \
+			`iblue` numeric(3,0), \
+			`ialpha` numeric(3,0), \
+			`irenderfx` numeric(2,0), \
+			`iskin` numeric(3,0), \
+			`szname` varchar(255), \
+			`reserved1` varchar(255), \
+			`reserved2` varchar(255), \
+			`reserved3` varchar(255), \
+			`reserved4` varchar(255), \
+			`reserved5` varchar(255), \
+			PRIMARY KEY( `id` ));"
+		, SteamID);
+		SQL_TQuery(g_DB, SQLErrorCheckCallback, createTableQuery);
+		ConnectionStatus = "Connected";
+	}
+	
+	char menuinfo[255];
+	Menu menu = new Menu(Handler_CloudMenu);
+	
+	if(g_SqlRunning) Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ] --- Loading~\n ", PLUGIN_VERSION, ConnectionStatus);
+	else Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cloud Storage %s \n \nDatabase Connection:\n [ %s ]\n ", PLUGIN_VERSION, ConnectionStatus);
+	menu.SetTitle(menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Refresh");
+	if(g_SqlRunning)
+	{
+		menu.AddItem("REFRESH", menuinfo, ITEMDRAW_DISABLED);
+	}
+	else
+	{
+		menu.AddItem("REFRESH", menuinfo);
+	}
+	
+	Sql_GetRow(client);
+	Format(menuinfo, sizeof(menuinfo), " Storage (%i Props)", g_iCloudRow[client]);
+	menu.AddItem("", menuinfo, ITEMDRAW_DISABLED);
+	
+	if(g_DB == INVALID_HANDLE || g_SqlRunning)
+	{
+		Format(menuinfo, sizeof(menuinfo), " Load... ");
+		menu.AddItem("LOAD", menuinfo, ITEMDRAW_DISABLED);	
+		Format(menuinfo, sizeof(menuinfo), " Save... ");
+		menu.AddItem("SAVE", menuinfo, ITEMDRAW_DISABLED);		
+		Format(menuinfo, sizeof(menuinfo), " Delete... ");
+		menu.AddItem("DELETE", menuinfo, ITEMDRAW_DISABLED);
+	}
+	else
+	{
+		if(g_iCloudRow[client] > 0)
 		{
 			Format(menuinfo, sizeof(menuinfo), " Load... ");
-			menu.AddItem("LOAD", menuinfo, ITEMDRAW_DISABLED);	
+			menu.AddItem("LOAD", menuinfo);			
 			Format(menuinfo, sizeof(menuinfo), " Save... ");
 			menu.AddItem("SAVE", menuinfo, ITEMDRAW_DISABLED);		
 			Format(menuinfo, sizeof(menuinfo), " Delete... ");
-			menu.AddItem("DELETE", menuinfo, ITEMDRAW_DISABLED);
+			menu.AddItem("DELETE", menuinfo);
 		}
 		else
 		{
-			if(g_iCloudRow[client] > 0)
-			{
-				Format(menuinfo, sizeof(menuinfo), " Load... ");
-				menu.AddItem("LOAD", menuinfo);			
-				Format(menuinfo, sizeof(menuinfo), " Save... ");
-				menu.AddItem("SAVE", menuinfo, ITEMDRAW_DISABLED);		
-				Format(menuinfo, sizeof(menuinfo), " Delete... ");
-				menu.AddItem("DELETE", menuinfo);
-			}
-			else
-			{
-				Format(menuinfo, sizeof(menuinfo), " Load... ");
-				menu.AddItem("LOAD", menuinfo, ITEMDRAW_DISABLED);			
-				Format(menuinfo, sizeof(menuinfo), " Save... ");
-				menu.AddItem("SAVE", menuinfo);	
-				Format(menuinfo, sizeof(menuinfo), " Delete... ");
-				menu.AddItem("DELETE", menuinfo, ITEMDRAW_DISABLED);
-			}
+			Format(menuinfo, sizeof(menuinfo), " Load... ");
+			menu.AddItem("LOAD", menuinfo, ITEMDRAW_DISABLED);			
+			Format(menuinfo, sizeof(menuinfo), " Save... ");
+			menu.AddItem("SAVE", menuinfo);	
+			Format(menuinfo, sizeof(menuinfo), " Delete... ");
+			menu.AddItem("DELETE", menuinfo, ITEMDRAW_DISABLED);
 		}
-		
-		if(g_SqlRunning) menu.ExitBackButton = false;
-		else menu.ExitBackButton = true;
-		menu.ExitButton = false;
-		menu.Display(client, MENU_TIME_FOREVER);
 	}
-	return Plugin_Handled;
+	
+	if(g_SqlRunning) menu.ExitBackButton = false;
+	else menu.ExitBackButton = true;
+	menu.ExitButton = false;
+	menu.Display(client, MENU_TIME_FOREVER);
 }
 
 public int Handler_CloudMenu(Menu menu, MenuAction action, int client, int selection)
@@ -1100,6 +1105,7 @@ public int Handler_CloudMenu(Menu menu, MenuAction action, int client, int selec
 			WritePackCell(dp, -1);
 			g_SqlRunning = true;
 		}
+		
 		Command_CloudMenu(client, 0);
 	}
 	else if (action == MenuAction_Cancel)
@@ -1227,9 +1233,9 @@ public Action Timer_LoadProps(Handle timer, Handle dp)
 
 bool LoadProps(int loader, char[] szLoadString)
 {
-	float fOrigin[3], fAngles[3], fSize;
-	char szModel[128], szClass[64], szFormatStr[255], DoorIndex[5], szBuffer[30][255], szName[128];
-	int Obj_LoadEntity, iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iRandom, iSkin;
+	float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
+	char szModel[128], szClass[64], szFormatStr[255], DoorIndex[5], szBuffer[30][255], szName[255];
+	int Obj_LoadEntity, iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iRandom, iSkin, iSequence;
 	RenderFx FxRender = RENDERFX_NONE;
 	
 	ExplodeString(szLoadString, " ", szBuffer, 30, 255);
@@ -1249,9 +1255,24 @@ bool LoadProps(int loader, char[] szLoadString)
 	iAlpha = StringToInt(szBuffer[14]);
 	iRenderFx = StringToInt(szBuffer[15]);
 	iSkin = StringToInt(szBuffer[16]);
-	Format(szName, sizeof(szName), "%s", szBuffer[17]);
 	
-	for (int i = 18; i < 30; i++)
+	int iNameStart = 18;
+	if (IsCharNumeric(szBuffer[17][0]))
+	{
+		iSequence = StringToInt(szBuffer[17]);
+		flPlaybackRate = StringToFloat(szBuffer[18]);
+		Format(szName, sizeof(szName), "%s", szBuffer[19]);
+		
+		iNameStart = 20;
+	}
+	else
+	{
+		iSequence = 0;
+		flPlaybackRate = 0.0;
+		Format(szName, sizeof(szName), "%s", szBuffer[17]);
+	}
+	
+	for (int i = iNameStart; i < 30; i++)
 	{
 		if (!StrEqual(szBuffer[i], ""))
 		{
@@ -1262,6 +1283,8 @@ bool LoadProps(int loader, char[] szLoadString)
 			break;
 		}
 	}
+	
+	TrimString(szName);
 	
 	if (strlen(szBuffer[9]) == 0)
 		iCollision = 5;
@@ -1280,13 +1303,12 @@ bool LoadProps(int loader, char[] szLoadString)
 	if (strlen(szBuffer[16]) == 0)
 		iSkin = 0;
 	if (strlen(szBuffer[17]) == 0)
+		iSequence = 0;
+	if (strlen(szBuffer[18]) == 0)
+		flPlaybackRate = 0.0;
+	if (strlen(szBuffer[19]) == 0)
 		szName = "";
 	
-	//iHealth = StringToInt(szBuffer[9]);
-	//if (iHealth == 2)
-	//	iHealth = 999999999;
-	//if (iHealth == 1)
-	//	iHealth = 50;
 	if (GetConVarBool(cvPhysicsSpamProtect) || StrContains(szClass, "prop_dynamic") >= 0)
 	{
 		Obj_LoadEntity = CreateEntityByName("prop_dynamic_override");
@@ -1334,12 +1356,12 @@ bool LoadProps(int loader, char[] szLoadString)
 			SetEntityRenderFx(Obj_LoadEntity, FxRender);
 			SetEntProp(Obj_LoadEntity, Prop_Send, "m_nSkin", iSkin);
 			
+			SetEntProp(Obj_LoadEntity, Prop_Send, "m_nSequence", iSequence);
+			
+			SetEntPropFloat(Obj_LoadEntity, Prop_Send, "m_flPlaybackRate", flPlaybackRate);
+			
 			ReplaceString(szName, sizeof(szName), "\n", "", false);
 			SetEntPropString(Obj_LoadEntity, Prop_Data, "m_iName", szName);
-			
-			//SetVariantInt(iHealth);
-			//AcceptEntityInput(Obj_LoadEntity, "sethealth", -1);
-			//AcceptEntityInput(Obj_LoadEntity, "disablemotion", -1);
 			
 			//light bulb
 			if (StrEqual(szModel, "models/props_2fort/lightbulb001.mdl"))
@@ -1379,7 +1401,6 @@ bool LoadProps(int loader, char[] szLoadString)
 					{
 						DispatchKeyValue(Obj_LoadEntity, "targetname", szName);
 						SetVariantString(szName);
-						//SetEntPropString(Obj_LoadEntity, Prop_Data, "m_iName", szName);
 					}
 					
 					AcceptEntityInput(Obj_LightDynamic, "setparent", -1);
@@ -1480,9 +1501,9 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 	{
 		g_iCountEntity = 0;
 		
-		float fOrigin[3], fAngles[3], fSize;
+		float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
 		char szModel[64], szTime[64], szClass[64], szName[128];
-		int iOrigin[3], iAngles[3], iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin;
+		int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence;
 		RenderFx EntityRenderFx;
 		
 		FormatTime(szTime, sizeof(szTime), "%Y/%m/%d");
@@ -1490,7 +1511,8 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 		WriteFileLine(g_hFileEditting[client], ";- SteamID64: %s (%N)", SteamID64, client);
 		WriteFileLine(g_hFileEditting[client], ";- Data Slot: %i", slot);
 		WriteFileLine(g_hFileEditting[client], ";- Saved on : %s", szTime);
-		for (int i = MaxClients; i < MAX_HOOK_ENTITIES; i++)if (IsValidEdict(i))
+		WriteFileLine(g_hFileEditting[client], ";- FileName : No Name");
+		for (int i = MaxClients; i < MAX_HOOK_ENTITIES; i++) if (IsValidEdict(i))
 		{
 			GetEdictClassname(i, szClass, sizeof(szClass));
 			if ((StrContains(szClass, "prop_dynamic") >= 0 || StrContains(szClass, "prop_physics") >= 0) && !StrEqual(szClass, "prop_ragdoll") && Build_ReturnEntityOwner(i) == client)
@@ -1521,25 +1543,19 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 					case(RENDERFX_DISTORT): 			iRenderFx = 16;
 					case(RENDERFX_HOLOGRAM): 			iRenderFx = 17;
 					default:	iRenderFx = 1;
-				}				
+				}
+								
 				iSkin = GetEntProp(i, Prop_Send, "m_nSkin");
+				
+				iSequence = GetEntProp(i, Prop_Send, "m_nSequence");
+				
+				flPlaybackRate = GetEntPropFloat(i, Prop_Send, "m_flPlaybackRate");
+				
 				GetEntPropString(i, Prop_Data, "m_iName", szName, sizeof(szName));
 				
-				for (int j = 0; j < 3; j++)
-				{
-					iOrigin[j] = RoundToNearest(fOrigin[j]);
-					iAngles[j] = RoundToNearest(fAngles[j]);
-				}
-				/*
-				iHealth = GetEntProp(i, Prop_Data, "m_iHealth", 4);
-				if (iHealth > 100000000)
-					iHealth = 2;
-				else if (iHealth > 0)
-					iHealth = 1;
-				else
-					iHealth = 0;
-				*/
-				WriteFileLine(g_hFileEditting[client], "ent%i %s %s %f %f %f %f %f %f %i %f %i %i %i %i %i %i %s", g_iCountEntity, szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, szName);
+				WriteFileLine(g_hFileEditting[client], "ent%i %s %s %f %f %f %f %f %f %i %f %i %i %i %i %i %i %i %f %s"
+				, g_iCountEntity, szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence, flPlaybackRate, szName);
+				
 				g_iCountEntity++;
 			}
 		}
@@ -1580,20 +1596,103 @@ void DeleteData(int client, int slot) // Delete Data from data file
 	}
 }
 
-//-----------[ Get data Function ]----------------------------------------------------------------------------------
-void GetDataDate(int client, int slot, char[] data, int maxlength) //Get the date inside the data file
+//-----------[ Set name Function ]--------------------------------------
+void SetDataName(int client, int slot, char[] name)
 {
-	char cFileName[255];
-	GetBuildPath(client, slot, cFileName);
+	if (DataFileExist(client, slot))
+	{
+		bool bSetName = false;
+		
+		char cOldFileName[255];
+		GetBuildPath(client, slot, cOldFileName);
+		Handle hOriginal = OpenFile(cOldFileName, "r");
+		
+		char cFileName[255];
+		cFileName = cOldFileName;
+		ReplaceString(cFileName, sizeof(cFileName), ".tf2sb", "-copy.tf2sb");
+		Handle hNewFile = OpenFile(cFileName, "w");
+		
+		if (hOriginal != INVALID_HANDLE && hNewFile != INVALID_HANDLE)
+		{
+			char szLoadString[511];
+			while (ReadFileLine(hOriginal, szLoadString, sizeof(szLoadString)))
+			{
+				if (StrContains(szLoadString, ";- FileName : ") != -1 && !bSetName)
+				{
+					WriteFileLine(hNewFile, ";- FileName : %s", name);
+					
+					bSetName = true;
+				}
+				else
+				{
+					if (StrContains(szLoadString, ";- ") == -1 && !bSetName)
+					{
+						WriteFileLine(hNewFile, ";- FileName : %s", name);
+					
+						bSetName = true;
+					}
+					
+					ReplaceString(szLoadString, sizeof(szLoadString), "\n", "");
+					WriteFileLine(hNewFile, szLoadString);
+				}
+			}
+			
+			CloseHandle(hOriginal);
+			CloseHandle(hNewFile);
+			
+			DeleteFile(cOldFileName);
+			RenameFile(cOldFileName, cFileName);
+		}
+	}
+}
+
+//-----------[ Get data Function ]----------------------------------------------------------------------------------
+char[] GetDataName(int client, int slot)
+{
+	char cName[255];
+	cName = "No Name";
 	
 	if (DataFileExist(client, slot))
 	{
+		char cFileName[255];
+		GetBuildPath(client, slot, cFileName);
+		
+		g_hFileEditting[client] = OpenFile(cFileName, "r");
+		if (g_hFileEditting[client] != INVALID_HANDLE)
+		{
+			char szBuffer[6][255], szLoadString[255];
+			while (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
+			{
+				if (StrContains(szLoadString, ";- FileName :") != -1)
+				{
+					ExplodeString(szLoadString, " ", szBuffer, 6, 255);
+					Format(cName, sizeof(cName), "%s %s %s", szBuffer[3], szBuffer[4], szBuffer[5]);
+					TrimString(cName);
+					
+					break;
+				}
+			}
+			
+			CloseHandle(g_hFileEditting[client]);
+		}
+	}
+	
+	return cName;
+}
+
+void GetDataDate(int client, int slot, char[] data, int maxlength) //Get the date inside the data file
+{
+	if (DataFileExist(client, slot))
+	{
+		char cFileName[255];
+		GetBuildPath(client, slot, cFileName);
+		
 		g_hFileEditting[client] = OpenFile(cFileName, "r");
 		if (g_hFileEditting[client] != INVALID_HANDLE)
 		{
 			char cDate[11], szBuffer[6][255];
 			char szLoadString[255];
-			for (int i = 1; i < MAX_HOOK_ENTITIES; i++) if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
+			while (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
 			{
 				if (StrContains(szLoadString, "Saved on :") != -1)
 				{
@@ -1622,7 +1721,7 @@ int GetDataProps(int client, int slot) //Get how many props inside data file
 			int iProps;
 			char szBuffer[9][255];
 			char szLoadString[255];
-			for (int i = 1; i < MAX_HOOK_ENTITIES; i++) if (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
+			while (ReadFileLine(g_hFileEditting[client], szLoadString, sizeof(szLoadString)))
 			{
 				if (StrContains(szLoadString, "Data File End |") != -1)
 				{
@@ -1746,9 +1845,9 @@ public void Sql_LoadData(int client)
 
 public void SQLLoadQuery(Handle owner, Handle hndl, const char[] error, any data) 
 {
-	float fOrigin[3], fAngles[3], fSize;
-	char szModel[128], szClass[64], szName[128];
-	int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin;
+	float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
+	char szModel[128], szClass[64], szName[128], strSequence[10], strPlaybackRate[10];
+	int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence;
 	char szLoadString[1024];
 	while (SQL_FetchRow(hndl))
 	{
@@ -1769,14 +1868,17 @@ public void SQLLoadQuery(Handle owner, Handle hndl, const char[] error, any data
 		iRenderFx = SQL_FetchInt(hndl, 15);
 		iSkin = SQL_FetchInt(hndl, 16);
 		SQL_FetchString(hndl, 17, szName, sizeof(szName));
-	}
-	
-	Format(szLoadString, sizeof(szLoadString), "ent %s %s %f %f %f %f %f %f %i %f %i %i %i %i %i %i %s %s %s %s %s %s", szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, szName, "", "", "", "","");
-	
-	if(LoadProps(data, szLoadString))
-	{
 		
+		SQL_FetchString(hndl, 18, strSequence, sizeof(strSequence));
+		iSequence = StringToInt(strSequence);
+		SQL_FetchString(hndl, 19, strPlaybackRate, sizeof(strPlaybackRate));
+		flPlaybackRate = StringToFloat(strPlaybackRate);
 	}
+	
+	Format(szLoadString, sizeof(szLoadString), "ent %s %s %f %f %f %f %f %f %i %f %i %i %i %i %i %i %i %f %s"
+	, szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence, flPlaybackRate, szName);
+	
+	LoadProps(data, szLoadString);
 }
 //--------------------------------
 
@@ -1788,9 +1890,9 @@ public void Sql_SaveData(int client)
 		char SteamID[18];
 		GetClientSteamID(client, SteamID);
 		char GetData[1024];
-		float fOrigin[3], fAngles[3], fSize;
+		float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
 		char szModel[64], szClass[64], szName[128];
-		int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin;
+		int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence;
 		RenderFx EntityRenderFx;
 		for (int i = MaxClients; i < MAX_HOOK_ENTITIES; i++)if (IsValidEdict(i))
 		{
@@ -1825,19 +1927,19 @@ public void Sql_SaveData(int client)
 					default:	iRenderFx = 1;
 				}				
 				iSkin = GetEntProp(i, Prop_Send, "m_nSkin");
+				
+				iSequence = GetEntProp(i, Prop_Send, "m_nSequence");
+				char strSequence[10];
+				IntToString(iSequence, strSequence, sizeof(strSequence));
+				
+				flPlaybackRate = GetEntPropFloat(i, Prop_Send, "m_flPlaybackRate");
+				char strPlaybackRate[10];
+				FloatToString(flPlaybackRate, strPlaybackRate, sizeof(strPlaybackRate));
+				
 				GetEntPropString(i, Prop_Data, "m_iName", szName, sizeof(szName));
 				
-				/*
-				iHealth = GetEntProp(i, Prop_Data, "m_iHealth", 4);
-				if (iHealth > 100000000)
-					iHealth = 2;
-				else if (iHealth > 0)
-					iHealth = 1;
-				else
-					iHealth = 0;
-				*/
 				Format(GetData, sizeof(GetData), "INSERT IGNORE INTO `%s` (`id`, `szclass`, `szmodel`, `forigin0`, `forigin1`, `forigin2`, `fangles0`, `fangles1`, `fangles2`, `icollision`, `fsize`, `ired`, `igreen`, `iblue`, `ialpha`, `irenderfx`, `iskin`, `szname`, `reserved1`, `reserved2`, `reserved3`, `reserved4`, `reserved5`) VALUES (NULL, '%s', '%s', '%f', '%f', '%f', '%f', '%f', '%f', '%i', '%f', '%i', '%i', '%i', '%i', '%i', '%i', '%s', '%s', '%s', '%s', '%s', '%s');"
-				, SteamID, szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, szName, "", "", "", "","");
+				, SteamID, szClass, szModel, fOrigin[0], fOrigin[1], fOrigin[2], fAngles[0], fAngles[1], fAngles[2], iCollision, fSize, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, szName, strSequence, strPlaybackRate, "", "","");
 				SQL_TQuery(g_DB, SQLErrorCheckCallback, GetData, client);
 			}
 		}
