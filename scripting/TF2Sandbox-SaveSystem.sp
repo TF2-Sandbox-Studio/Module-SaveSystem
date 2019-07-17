@@ -17,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.4"
+#define PLUGIN_VERSION "9.5"
 
 #include <sourcemod>
 #include <sdktools>
@@ -837,13 +837,13 @@ public Action Command_LoadOthersProjectsMenu(int client, int selectedclient) //c
 			if (g_bPermission[selectedclient][iSlot])
 			{
 				cPermission = "Public";
-				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(client, iSlot), cPermission);
+				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(selectedclient, iSlot), cPermission);
 				menu.AddItem(cSlot, menuinfo);
 			}
 			else
 			{
 				cPermission = "Private";
-				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(client, iSlot), cPermission);
+				Format(menuinfo, sizeof(menuinfo), " Slot %i [%s]: [%s]", iSlot, GetDataName(selectedclient, iSlot), cPermission);
 				menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 			}
 		}
