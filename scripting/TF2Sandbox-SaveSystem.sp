@@ -17,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.5"
+#define PLUGIN_VERSION "9.6"
 
 #include <sourcemod>
 #include <sdktools>
@@ -101,7 +101,7 @@ public void OnPluginStart()
 		}
 		else
 		{
-			SetFailState("[TF2SB] Failed to create directory at addons/sourcemod/data/TF2SBSaveSystem/ - Please manually create that path and reload this plugin.");
+			SetFailState("[TF2SB] Failed to create directory addons/sourcemod/data/TF2SBSaveSystem/ - Please manually create this directory and reload the plugin.");
 		}
 	}
 	
@@ -116,7 +116,7 @@ public void OnPluginStart()
 		}
 		else
 		{
-			SetFailState("[TF2SB] Failed to create directory at addons/sourcemod/data/TF2SBCache/ - Please manually create that path and reload this plugin.");
+			SetFailState("[TF2SB] Failed to create directory addons/sourcemod/data/TF2SBCache/ - Please manually create this directory and reload the plugin.");
 		}
 	}
 	
@@ -130,7 +130,7 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 	{
 		if (g_iCoolDown[client] != 0)
 		{
-			Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+			Build_PrintToChat(client, "Loading is currently on cooldown, please wait \x04%i\x01 more seconds.", g_iCoolDown[client]);
 		}
 		else if (args == 2)
 		{
@@ -143,22 +143,22 @@ public Action Command_LoadDataFromDatabase(int client, int args)
 			bool tn_is_ml;
 			int targets_found = ProcessTargetString(cTarget, client, targets, sizeof(targets), COMMAND_FILTER_NO_IMMUNITY | COMMAND_FILTER_NO_MULTI, target_name, sizeof(target_name), tn_is_ml);
 			
-			if (targets_found <= COMMAND_TARGET_AMBIGUOUS) Build_PrintToChat(client, "Error: More then one client have the name : \x04%s\x01", cTarget);
+			if (targets_found <= COMMAND_TARGET_AMBIGUOUS) Build_PrintToChat(client, "Error: More then one client has the name \x04%s\x01!", cTarget);
 			else if (targets_found <= COMMAND_TARGET_NONE)
 			{
-				Build_PrintToChat(client, "Searching steamid(\x04%s\x01)... Searching file slot\x04%i\x01...", cTarget, StringToInt(cSlot));
+				Build_PrintToChat(client, "Searching for SteamID(\x04%s\x01)... Searching for save slot\x04%i\x01...", cTarget, StringToInt(cSlot));
 				
 				char cFileName[255];
 				BuildPath(Path_SM, cFileName, sizeof(cFileName), "data/TF2SBSaveSystem/%s&%s@%i.tf2sb", g_cCurrentMap, cTarget, StringToInt(cSlot));
 				
 				if (FileExists(cFileName)) LoadDataSteamID(client, cTarget, StringToInt(cSlot));
-				else Build_PrintToChat(client, "Error: Fail to find the Data File...");
+				else Build_PrintToChat(client, "Error: Failed to find the save file!");
 			}
 			else
 			{
 				Build_PrintToChat(client, "Found target(\x04%N\x01)... Searching file slot\x04%i\x01...", targets[0], StringToInt(cSlot));
 				if (DataFileExist(targets[0], StringToInt(cSlot))) LoadData(client, targets[0], StringToInt(cSlot));
-				else Build_PrintToChat(client, "Error: Fail to find the Data File...");
+				else Build_PrintToChat(client, "Error: Failed to find the save file...");
 			}
 			
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
@@ -270,11 +270,11 @@ public Action Timer_Ads(Handle timer, int LoopNumber)
 {
 	switch (LoopNumber)
 	{
-		case (0): Build_PrintToAll(" Type \x04/ss\x01 to SAVE or LOAD your buildings!");
-		case (1): Build_PrintToAll(" Remember to SAVE your buildings! Type \x04/ss\x01 in chat box to save.");
-		case (2): Build_PrintToAll(" Cache System will help you to cache your props automatically.");
-		case (3): Build_PrintToAll(" If you disconnect for some reasons.. Nevermind! Cache System will cache your props!");
-		case (4): CPrintToChatAll("[{green}Save System{default}] {orange}Developer{default}: {yellow}BattlefieldDuck{default}, {green}aIM{default}, {pink}Leadkiller{default}, {red}Danct12{default}.");
+		case (0): Build_PrintToAll(" Say \x04/ss\x01 to SAVE or LOAD your builds!");
+		case (1): Build_PrintToAll(" Remember to SAVE your builds! Say \x04/ss\x01 in the chat to save!");
+		case (2): Build_PrintToAll(" Cache System will help you cache your props!");
+		case (3): Build_PrintToAll(" If you disconnected accidently, do not worry! Cache System will save your props!");
+		case (4): CPrintToChatAll("[{green}Save System{default}] {orange}Developers{default}: {yellow}BattlefieldDuck{default}, {green}aIM{default}, {pink}Leadkiller{default}, {red}Danct12{default}.");
 	}
 	
 	LoopNumber++;
@@ -320,7 +320,7 @@ public Action Command_CacheMenu(int client, int args)
 	char menuinfo[1024];
 	Menu menu = new Menu(Handler_CacheMenu);
 	
-	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache Menu v%s\n \nThe server had saved your props when you disconnected.\nWould you like to load the Cache?\n ", PLUGIN_VERSION);
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Cache System Menu v%s\n \nSome of your props were cached before you disconnected.\nWould you like to load your Cache?\n ", PLUGIN_VERSION);
 	menu.SetTitle(menuinfo);
 	
 	int iSlot = 0;
@@ -339,7 +339,7 @@ public Action Command_CacheMenu(int client, int args)
 	Format(menuinfo, sizeof(menuinfo), " Yes, Load it.", client);
 	menu.AddItem("LOAD", menuinfo);
 	
-	Format(menuinfo, sizeof(menuinfo), " No, Dont't load it", client);
+	Format(menuinfo, sizeof(menuinfo), " No, Don't load it", client);
 	menu.AddItem("DELETE", menuinfo);
 	
 	menu.ExitBackButton = false;
@@ -384,7 +384,7 @@ public Action Command_MainMenu(int client, int args)
 {
 	if(g_SqlRunning)
 	{
-		Build_PrintToAll(" Cloud Storage is currently Loading!");
+		Build_PrintToAll(" Cloud Storage is currently loading!");
 		return Plugin_Handled;
 	}
 	
@@ -403,10 +403,10 @@ public Action Command_MainMenu(int client, int args)
 	Format(menuinfo, sizeof(menuinfo), " Delete... ", client);
 	menu.AddItem("DELETE", menuinfo);
 	
-	Format(menuinfo, sizeof(menuinfo), " Set Permission... ", client);
+	Format(menuinfo, sizeof(menuinfo), " Set Save Permissions... ", client);
 	menu.AddItem("PERMISSION", menuinfo);
 	
-	Format(menuinfo, sizeof(menuinfo), " Load other's projects... ", client);
+	Format(menuinfo, sizeof(menuinfo), " Load Other Saves... ", client);
 	if (GetClientInGame() > 1) menu.AddItem("LOADOTHERS", menuinfo);
 	else menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
 	
@@ -504,7 +504,7 @@ public int Handler_LoadMenu(Menu menu, MenuAction action, int client, int select
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Load Function is currently on cooldown, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_LoadMenu(client, -1);
 	}
@@ -568,7 +568,7 @@ public int Handler_SaveMenu(Menu menu, MenuAction action, int client, int select
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else Build_PrintToChat(client, "Save Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Save Function is currently on cooldown, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_SaveMenu(client, -1);
 	}
@@ -730,18 +730,18 @@ public int Handler_PermissionMenu(Menu menu, MenuAction action, int client, int 
 			if (g_bPermission[client][iSlot])
 			{
 				g_bPermission[client][iSlot] = false;
-				Build_PrintToChat(client, "Slot\x04%i\x01 Permission have set to \x04Private\x01.", iSlot);
+				Build_PrintToChat(client, "Slot\x04%i\x01's permissions have set to \x04Private\x01.", iSlot);
 			}
 			else
 			{
 				g_bPermission[client][iSlot] = true;
-				Build_PrintToChat(client, "Slot\x04%i\x01 Permission have set to \x04Public\x01.", iSlot);
+				Build_PrintToChat(client, "Slot\x04%i\x01's permission have set to \x04Public\x01.", iSlot);
 			}
 			
 			g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 			CreateTimer(0.05, Timer_CoolDownFunction, client);
 		}
-		else Build_PrintToChat(client, "Permission Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+		else Build_PrintToChat(client, "Permission Function is currently on cooldown, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		
 		Command_PermissionMenu(client, -1);
 	}
@@ -876,12 +876,12 @@ public int Handler_LoadOthersProjectsMenu(Menu menu, MenuAction action, int clie
 				
 				char cName[48];
 				GetClientName(client, cName, sizeof(cName));
-				Build_PrintToChat(g_iSelectedClient[client], "Player \x04%s\x01 have load your Slot\x04%i\x01!", cName, iSlot);
-				PrintCenterText(g_iSelectedClient[client], "Player %s have load your Slot %i!", cName, iSlot);
+				Build_PrintToChat(g_iSelectedClient[client], "Player \x04%s\x01 has loaded Slot\x04%i\x01!", cName, iSlot);
+				PrintCenterText(g_iSelectedClient[client], "Player %s has loaded Slot %i!", cName, iSlot);
 				g_iCoolDown[client] = GetConVarInt(cvg_iCoolDownsec);
 				CreateTimer(0.05, Timer_CoolDownFunction, client);
 			}
-			else Build_PrintToChat(client, "Load Function is currently cooling down, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
+			else Build_PrintToChat(client, "Load Function is currently on cooldown, please wait \x04%i\x01 seconds.", g_iCoolDown[client]);
 		}
 		
 		Command_LoadOthersProjectsMenu(client, g_iSelectedClient[client]);
@@ -1568,7 +1568,7 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 		
 		if (FileExists(cFileName) && g_iCountEntity == 0)
 		{
-			if (slot != 0) Build_PrintToChat(client, "Save Result >> ERROR!!!. You didnt build anything, please build something and save again.");
+			if (slot != 0) Build_PrintToChat(client, "Save Result >> ERROR!!! >> You didn't build anything! Please build something and save again.");
 			
 			DeleteFile(cFileName);
 		}
@@ -1576,8 +1576,8 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 	}
 	if (g_iCountEntity == -1)
 	{
-		if (slot == 0) Build_PrintToChat(client, "Cache Result >> ERROR!!!, please contact server admin.");
-		else Build_PrintToChat(client, "Save Result >> ERROR!!! >> Error in Slot\x04%i\x01, please contact server admin.", slot);
+		if (slot == 0) Build_PrintToChat(client, "Cache Result >> ERROR!!! >> Please contact a server admin.");
+		else Build_PrintToChat(client, "Save Result >> ERROR!!! >> Error in Slot\x04%i\x01, please contact a server admin.", slot);
 	}
 }
 
@@ -1591,7 +1591,7 @@ void DeleteData(int client, int slot) // Delete Data from data file
 	{
 		DeleteFile(cFileName);
 		
-		if (DataFileExist(client, slot)) Build_PrintToChat(client, "Fail to deleted Slot\x04%i\x01 Data, please contact server admin.", slot);
+		if (DataFileExist(client, slot)) Build_PrintToChat(client, "Fail to deleted Slot\x04%i\x01 Data, please contact a server admin.", slot);
 		else Build_PrintToChat(client, "Deleted Slot\x04%i\x01 Data successfully", slot);
 	}
 }
