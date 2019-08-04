@@ -1502,7 +1502,7 @@ void SaveData(int client, int slot) // Save Data from data file (CLIENT INDEX, S
 		g_iCountEntity = 0;
 		
 		float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
-		char szModel[64], szTime[64], szClass[64], szName[128];
+		char szModel[128], szTime[64], szClass[64], szName[128];
 		int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence;
 		RenderFx EntityRenderFx;
 		
@@ -1891,7 +1891,7 @@ public void Sql_SaveData(int client)
 		GetClientSteamID(client, SteamID);
 		char GetData[1024];
 		float fOrigin[3], fAngles[3], fSize, flPlaybackRate;
-		char szModel[64], szClass[64], szName[128];
+		char szModel[128], szClass[64], szName[128];
 		int iCollision, iRed, iGreen, iBlue, iAlpha, iRenderFx, iSkin, iSequence;
 		RenderFx EntityRenderFx;
 		for (int i = MaxClients; i < MAX_HOOK_ENTITIES; i++)if (IsValidEdict(i))
