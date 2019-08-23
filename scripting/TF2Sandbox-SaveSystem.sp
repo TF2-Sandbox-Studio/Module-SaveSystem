@@ -7,7 +7,7 @@
 //	3.Delete...		  
 //  4.Set Permission...
 //  5.Load others project...
-//	6.Check Cache System...
+//	6.Cache System...
 //	7.Connect to Cloud Storage
 //		  		      
 ////////////////////////
@@ -17,7 +17,7 @@
 #define DEBUG
 
 #define PLUGIN_AUTHOR "Battlefield Duck"
-#define PLUGIN_VERSION "9.6"
+#define PLUGIN_VERSION "9.7"
 
 #include <sourcemod>
 #include <sdktools>
@@ -52,7 +52,8 @@ char g_cCurrentMap[64];
 bool g_bPermission[MAXPLAYERS + 1][MAX_SLOT + 1]; //client, slot
 
 //Cache system
-bool g_bIsClientInServer[MAXPLAYERS + 1] = false;
+Handle g_hCacheTimer[MAXPLAYERS + 1] = INVALID_HANDLE;
+
 bool g_bWaitingForPlayers;
 
 int g_iCoolDown[MAXPLAYERS + 1] = 0;
@@ -235,14 +236,18 @@ public void OnClientPutInServer(int client)
 	g_bPermission[client][j] = false;
 	
 	//Cache system
-	g_bIsClientInServer[client] = true;
+	g_hCacheTimer[client] = INVALID_HANDLE;
+	
 	if(g_bWaitingForPlayers)	CreateTimer(30.0, Timer_Load, client);
 	else CreateTimer(5.0, Timer_Load, client);
 }
 
 public void OnClientDisconnect(int client)
 {
-	g_bIsClientInServer[client] = false;
+	if (g_hCacheTimer[client] != INVALID_HANDLE)
+	{
+		KillTimer(g_hCacheTimer[client]);
+	}
 }
 
 public void TF2_OnWaitingForPlayersStart()
@@ -296,9 +301,14 @@ public Action Timer_LoadMap(Handle timer, int client)
 //Cache system
 public Action Timer_Save(Handle timer, int client)
 {
-	if (IsValidClient(client) && !IsFakeClient(client)) SaveData(client, 0);
+	if (!IsValidClient(client))
+	{
+		return Plugin_Stop;
+	}
 	
-	if (g_bIsClientInServer[client]) CreateTimer(10.0, Timer_Save, client);
+	SaveData(client, 0);
+	
+	return Plugin_Continue;
 }
 
 public Action Timer_Load(Handle timer, int client)
@@ -306,7 +316,10 @@ public Action Timer_Load(Handle timer, int client)
 	if (IsValidClient(client) && !IsFakeClient(client) && !g_bWaitingForPlayers)
 	{
 		if (DataFileExist(client, 0)) Command_CacheMenu(client, -1);
-		else CreateTimer(5.0, Timer_Save, client);
+		else if (g_hCacheTimer[client] == INVALID_HANDLE)
+		{
+			g_hCacheTimer[client] = CreateTimer(5.0, Timer_Save, client, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+		}
 	}
 	else CreateTimer(5.0, Timer_Load, client);
 }
@@ -410,7 +423,7 @@ public Action Command_MainMenu(int client, int args)
 	if (GetClientInGame() > 1) menu.AddItem("LOADOTHERS", menuinfo);
 	else menu.AddItem("LOADOTHERS", menuinfo, ITEMDRAW_DISABLED);
 	
-	Format(menuinfo, sizeof(menuinfo), " Check Cache System... ", client);
+	Format(menuinfo, sizeof(menuinfo), " Cache System... ", client);
 	menu.AddItem("CACHE", menuinfo);
 	
 	Format(menuinfo, sizeof(menuinfo), " Connect to Cloud Storage... ", client);
@@ -907,7 +920,17 @@ public Action Command_CheckCacheMenu(int client, int args)
 	char menuinfo[255];
 	Menu menu = new Menu(Handler_CheckCacheMenu);
 	
-	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System: RUNNING\n ", PLUGIN_VERSION, g_cCurrentMap);
+	char cacheStatus[48];
+	if (g_hCacheTimer[client] == INVALID_HANDLE)
+	{
+		cacheStatus = "STOPPED";
+	}
+	else
+	{
+		cacheStatus = "RUNNING";
+	}
+	
+	Format(menuinfo, sizeof(menuinfo), "TF2 Sandbox - Save System Main Menu %s \nMap: %s\n \nPlugin Author: BattlefieldDuck\nCredits: Danct12, Leadkiller, aIM...\n \nCache System: %s\n ", PLUGIN_VERSION, g_cCurrentMap, cacheStatus);
 	menu.SetTitle(menuinfo);
 	
 	int iSlot = 0;
@@ -922,8 +945,17 @@ public Action Command_CheckCacheMenu(int client, int args)
 	
 	menu.AddItem(cSlot, menuinfo, ITEMDRAW_DISABLED);
 	
-	Format(menuinfo, sizeof(menuinfo), " Refresh");
+	Format(menuinfo, sizeof(menuinfo), " Load current cache data");
+	menu.AddItem("LOAD", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " Refresh\n");
 	menu.AddItem("REFRESH", menuinfo);
+	
+	Format(menuinfo, sizeof(menuinfo), " ---------------------\n!!! Restarting cache system will lost the cache data !!!\n");
+	menu.AddItem("", menuinfo, ITEMDRAW_DISABLED);
+	
+	Format(menuinfo, sizeof(menuinfo), " Restart cache system");
+	menu.AddItem("RESTART", menuinfo);
 	
 	menu.ExitBackButton = true;
 	menu.ExitButton = false;
@@ -938,6 +970,23 @@ public int Handler_CheckCacheMenu(Menu menu, MenuAction action, int client, int 
 		menu.GetItem(selection, info, sizeof(info));
 		
 		if (StrEqual("REFRESH", info)) Command_CheckCacheMenu(client, 0);
+		else if (StrEqual("LOAD", info))
+		{
+			LoadData(client, client, 0);
+			
+			Command_CheckCacheMenu(client, 0);
+		}
+		else if (StrEqual("RESTART", info))
+		{
+			char cFileName[255];
+			GetBuildPath(client, 0, cFileName);
+			
+			if (FileExists(cFileName)) DeleteFile(cFileName); //Delete
+			
+			Build_PrintToChat(client, "Cache system restarted");
+			
+			Command_CheckCacheMenu(client, 0);
+		}
 	}
 	else if (action == MenuAction_Cancel)
 	{
@@ -1173,7 +1222,17 @@ void LoadFunction(int loader, int slot, char cFileName[255])
 				}
 				CloseHandle(g_hFileEditting[loader]);
 				
-				if (slot == 0) Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+				if (slot == 0)
+				{
+					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+					
+					DeleteFile(cFileName);
+					
+					if (g_hCacheTimer[loader] == INVALID_HANDLE)
+					{
+						g_hCacheTimer[loader] = CreateTimer(5.0, Timer_Save, loader, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+					}
+				}
 				else Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
 			}
 		}
@@ -1213,7 +1272,21 @@ public Action Timer_LoadProps(Handle timer, Handle dp)
 			}
 			if (IsEndOfFile(g_hFileEditting[loader]))
 			{
-				if (slot == 0) Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+				if (slot == 0)
+				{
+					Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Cache Loaded", g_iCountEntity, g_iCountLoop - g_iCountEntity);
+					
+					CloseHandle(g_hFileEditting[loader]);
+					
+					DeleteFile(cFileName);
+					
+					if (g_hCacheTimer[loader] == INVALID_HANDLE)
+					{
+						g_hCacheTimer[loader] = CreateTimer(5.0, Timer_Save, loader, TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+					}
+					
+					return;
+				}
 				else Build_PrintToChat(loader, "Load Result >> Loaded: \x04%i\x01, Error: \x04%i\x01 >> Loaded Slot\x04%i\x01", g_iCountEntity, g_iCountLoop - g_iCountEntity, slot);
 			}
 			else
